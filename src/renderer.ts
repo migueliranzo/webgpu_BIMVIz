@@ -1,4 +1,5 @@
 import shaderCode from './shaders/PASS_GEOMETRY.wgsl?raw';
+import loadModelShaderCode from './shaders/PASS_LOADMODEL.wgsl?raw';
 import forwardShaderCode from './shaders/FORWARD_HOVER.wgsl?raw';
 import computeForwardCode from './shaders/COMPUTE_HOVER.wgsl?raw'
 import directLightShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw'
@@ -9,8 +10,8 @@ import { ArcballCamera } from './deps/camera.ts';
 import { vec3, mat4 } from 'wgpu-matrix'
 import { meshUtils, createPipelineManager, geometryUtils } from './rejectclassesreturnmonkeTOBENAMEDPROPERLY.ts';
 
-export function renderer(device: GPUDevice) {
-
+export function renderer(device: GPUDevice, loadedModel: any[]) {
+  //loadedModel.geometries = loadedModel.geometries.slice(0, 1);
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -26,6 +27,10 @@ export function renderer(device: GPUDevice) {
   const shaderModule = device.createShaderModule({
     code: shaderCode,
   });
+
+  const loadModelshaderModule = device.createShaderModule({
+    code: loadModelShaderCode,
+  })
 
   const forwardShaderModule = device.createShaderModule({
     code: forwardShaderCode,
@@ -45,8 +50,56 @@ export function renderer(device: GPUDevice) {
     alphaMode: 'premultiplied',
   })
 
+
+  //IFC MODEL LOADING 
+  //console.log(loadedModel.geometries.slice(0, 5), loadedModel.size);
+
+  let loadModelVertexBuffer = device.createBuffer({
+    size: loadedModel.vertSize,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+  })
+  let loadModelIndexBuffer = device.createBuffer({
+    size: loadedModel.indSize,
+    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
+  })
+
+  let loadModelUniformBuffer = device.createBuffer({
+    size: loadedModel.geometries.length * ALIGNED_SIZE,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+  })
+
+  const loadModelBindGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: MAT4_SIZE + VEC4_SIZE }
+    }]
+  });
+
+  const loadModelBindGroup = device.createBindGroup({
+    layout: loadModelBindGroupLayout,
+    entries: [{
+      binding: 0,
+      resource: {
+        buffer: loadModelUniformBuffer,
+        size: MAT4_SIZE + VEC4_SIZE,
+        offset: 0
+      }
+    }]
+  });
+
+  let _offsetGeo = 0;
+  let _offsetIndex = 0;
+  loadedModel.geometries.forEach((geo, _i) => {
+    device.queue.writeBuffer(loadModelVertexBuffer, _offsetGeo, geo.vertexArray);
+    device.queue.writeBuffer(loadModelIndexBuffer, _offsetIndex, geo.indexArray);
+    _offsetGeo += geo.vertexArray.byteLength;
+    _offsetIndex += geo.indexArray.byteLength;
+  });
+
+  const cubeGeometry = geometryUtils.createBufferGeometry(cubeVertexData, device); //TODO passing device weird? 
+
   const meshUtilsManager = meshUtils();
-  const cubeGeometry = geometryUtils.createBufferGeometry(cubeVertexData, device); //TODO this cant be THBOIT
   const cubeMesh = meshUtilsManager.createMesh(cubeGeometry, { color: vec3.create(1, 0, 0) });
   const cubeMesh1 = meshUtilsManager.createMesh(cubeGeometry, { color: vec3.create(0, 1, 0) });
   const cubeMesh2 = meshUtilsManager.createMesh(cubeGeometry, { color: vec3.create(0, 0, 1) });
@@ -434,6 +487,53 @@ export function renderer(device: GPUDevice) {
     return device.createRenderPipeline(pipelineDescriptor);
   }();
 
+  const loadModelPipeline = function() {
+    const vertexBuffers: GPUVertexBufferLayout[] = [{
+      attributes: [{
+        shaderLocation: 0,
+        offset: 0,
+        format: 'float32x3',
+      }, {
+        shaderLocation: 1,
+        offset: 4,
+        format: 'float32x3'
+      }],
+      arrayStride: 4 * (3 + 3),
+      stepMode: 'vertex'
+    }];
+
+    const pipelineDescriptor: GPURenderPipelineDescriptor = {
+      vertex: {
+        module: loadModelshaderModule,
+        entryPoint: 'vertex_main',
+        buffers: vertexBuffers,
+      },
+      fragment: {
+        module: loadModelshaderModule,
+        entryPoint: 'fragment_main',
+        targets: [
+          { format: navigator.gpu.getPreferredCanvasFormat() }
+          //{ format: 'rgba16float' },
+        ]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        //frontFace: 'ccw',
+        cullMode: 'back'
+      },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less-equal',
+        format: 'depth24plus',
+        depthBias: -1,
+      },
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [loadModelBindGroupLayout],
+      }),
+    }
+    return device.createRenderPipeline(pipelineDescriptor);
+  }();
+
   const computeHoverPipeline = function() {
     const computePipeline = device.createComputePipeline({
       layout: device.createPipelineLayout({
@@ -457,6 +557,22 @@ export function renderer(device: GPUDevice) {
       view: context.getCurrentTexture().createView()
       //      view: directLightTexture.createView(),
     }]
+  }
+
+  const loadModelPassDescriptor: GPURenderPassDescriptor = {
+    colorAttachments: [{
+      clearValue: clearColor,
+      loadOp: 'clear',
+      storeOp: 'store',
+      view: context.getCurrentTexture().createView()
+      //view: directLightTexture.createView()
+    }],
+    depthStencilAttachment: {
+      view: depthTexture.createView(),
+      depthClearValue: 1,
+      depthLoadOp: 'clear',
+      depthStoreOp: 'store',
+    },
   }
 
   const geometryPassDescriptor: GPURenderPassDescriptor = {
@@ -510,21 +626,53 @@ export function renderer(device: GPUDevice) {
   }
 
 
-  let lastFrameMS = Date.now();
+  let lastFrameMS = Date.now()
   //Create structure that holds geo and color so we can render any geo points with attached color
 
   async function render() {
     const now = Date.now();
     const deltaTime = (now - lastFrameMS) / 1000;
     const commandEnconder = device.createCommandEncoder();
-    const passEncoder = commandEnconder.beginRenderPass(geometryPassDescriptor);
     lastFrameMS = now;
 
     let canvasView = context.getCurrentTexture().createView();
     directLightPassDescriptor.colorAttachments[0].view = canvasView;
+    loadModelPassDescriptor.colorAttachments[0].view = canvasView;
     renderPassDescriptor.colorAttachments[0].view = canvasView;
 
+    const loadModelEncoder = commandEnconder.beginRenderPass(loadModelPassDescriptor);
+    loadModelEncoder.setPipeline(loadModelPipeline);
+    let vertexByteOffset = 0;
+    let indexByteOffset = 0;
+
+    loadedModel.geometries.forEach((geo, i) => {
+      let _dynamicOffset = ALIGNED_SIZE * i;
+      loadModelEncoder.setVertexBuffer(0, loadModelVertexBuffer, vertexByteOffset, geo.vertexArray.byteLength)
+      loadModelEncoder.setIndexBuffer(loadModelIndexBuffer, 'uint32', indexByteOffset, geo.indexArray.byteLength);
+      vertexByteOffset += geo.vertexArray.byteLength;
+      indexByteOffset += geo.indexArray.byteLength;
+
+      const flatMatrix = geo.flatTransform;
+      const proMat = getProjectionMatrix(800, 600);
+      const mvpMatrix = mat4.identity();
+      mat4.multiply(proMat, camera.update(deltaTime, inputHandler()), mvpMatrix);
+      mat4.multiply(mvpMatrix, flatMatrix, mvpMatrix);
+
+      device.queue.writeBuffer(loadModelUniformBuffer, _dynamicOffset, mvpMatrix);
+      device.queue.writeBuffer(loadModelUniformBuffer, _dynamicOffset + MAT4_SIZE, new Float32Array(Object.values(geo.color)));
+      loadModelEncoder.setBindGroup(0, loadModelBindGroup, [i * ALIGNED_SIZE]);
+
+      loadModelEncoder.drawIndexed(geo.indexArray.length);
+      //loadModelEncoder.draw(geo.vertexArray.length / 3);
+    });
+
+    loadModelEncoder.end();
+
+    device.queue.submit([commandEnconder.finish()]);
+    requestAnimationFrame(render);
+    return;
     ////la nueva era
+    const passEncoder = commandEnconder.beginRenderPass(geometryPassDescriptor);
     passEncoder.setPipeline(geoPassPipeline);
     pipManager.getDeferred().forEach((mesh, i) => {
       const dynamicOffset = i * ALIGNED_SIZE;
@@ -543,7 +691,7 @@ export function renderer(device: GPUDevice) {
 
       passEncoder.setVertexBuffer(0, mesh.geometry.vertexBuffer);
       passEncoder.setBindGroup(0, uniformBindGroup, [i * ALIGNED_SIZE]);
-      passEncoder.draw(mesh.geometry.vertexData.length / 8) //This is verDat length / bytes per ver
+      passEncoder.draw(mesh.geometry.vertexData.length / 8) //This is verDat length / attribute floats per ver
     })
     passEncoder.end();
 
@@ -597,7 +745,7 @@ export function renderer(device: GPUDevice) {
     const data = copyArrayBuffer.slice();
     computeHoverstagingBuffer.unmap();
     //console.log(new Float32Array(data));
-    requestAnimationFrame(render);
+    //requestAnimationFrame(render);
 
   }
   requestAnimationFrame(render);

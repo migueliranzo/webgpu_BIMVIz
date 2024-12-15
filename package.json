@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@webgpu/types": "^0.1.51",
+    "web-ifc": "^0.0.66",
     "wgpu-matrix": "^3.3.0"
   }
 }

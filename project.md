@@ -9,11 +9,18 @@
           the 'light pass'
  - Mesh load/rendering 
     -We render a cube for now so maybe expand to meshes next? or maybe focus on the BIM SIDE, we have to check this
+    -Update, we render BIM structures!!! amazing!!!!! lets do some basic shading 
  - Basic picking -> to select elments 
     -We got hover working so we can build from there the picking
  - Basic camera controls -> Orbit 
     -Orbit camera added but lacking translate feature, can wait
 
+
+IMPORTANT THING ABOUT THE PROJECT AND DIFFERENTATION
+The cool thing we could do is use compute shaders to deal with some BIM stuff since previously made
+BIM visizualers on the web using webgl simply couldnt use compute shaders, so since we use webgpu 
+and compute shaders are available we could try to use that to not only create a cool BIM viz but
+actually do something better than already existing software. Just leaving this here...
 
 ### SHOULD I COPY OR RAW IMPLEMENT X FEATURE?
 
