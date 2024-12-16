@@ -1,19 +1,17 @@
 #### Basic webgpu render current scope
 
- - Simple shaders for solid color rendering 
-   -Working on this currently, lets just propose what three.js does where you can add a color and it will render
-   said geo with the color, so It will be saved outside the geometry thats for sure, so we will then create an object that holds the geo and the color -> and it will eventually go from color to material if at all
-          -So I have some deffered shading setup working, now I will add a forward pass to complete it and
-          add some interaction?
-          -Added the interaction!, we got a hover forward pass that picks up from the deffered and it all comes toegether at the end on
-          the 'light pass'
- - Mesh load/rendering 
-    -We render a cube for now so maybe expand to meshes next? or maybe focus on the BIM SIDE, we have to check this
-    -Update, we render BIM structures!!! amazing!!!!! lets do some basic shading 
+ - Rendering of BIM models through IFC files
  - Basic picking -> to select elments 
     -We got hover working so we can build from there the picking
  - Basic camera controls -> Orbit 
     -Orbit camera added but lacking translate feature, can wait
+
+## Current arquitecture notes
+ - We have went for a g pass -> compute for effects and state -> main render pass
+   The main idea behind it is we dont really benefit from separating the effects outside the main final render pass
+   since we have per object state so we dont really need to depend on anything else for state applied effects, plus having
+   multiple ifs doesnt relly affect perf as bad since close geometries share similar behaviour so gpu branch prediction should
+   help a bit make it cheaper 
 
 
 IMPORTANT THING ABOUT THE PROJECT AND DIFFERENTATION
