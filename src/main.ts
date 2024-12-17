@@ -16,6 +16,8 @@ async function init() {
   const device = await adapter.requestDevice();
 
 
+
+  //Fetching of BIM model
   const ifcAPI = new IfcAPI();
   ifcAPI.SetWasmPath("../node_modules/web-ifc/");
   await ifcAPI.Init();
