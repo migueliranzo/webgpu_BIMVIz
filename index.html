@@ -2,13 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel='stylesheet' href='./src/style.css'>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Webgpu renderer</title>
   </head>
   <body>
     <div id="app">
       <canvas width='800px' height='600px' id='canvas_main_render_target'></canvas>
+
+      <div class='p-2' style='position:absolute; top: 0; left: -20; padding-top: 3rem; '>
+        <div class='flex flex-col' id='changeViewBtn'>
+       <div class='justify-center align-center flex rounded-md  shadow-md' style='background-color: white; width: 40px; height: 40px;
+    -webkit-user-select: none;'>
+<img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded">
+        </div>
+        </div>
+
+      </div>
+
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
