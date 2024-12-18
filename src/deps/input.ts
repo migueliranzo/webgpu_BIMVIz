@@ -26,6 +26,18 @@ export default interface Input {
   readonly mouseHover: {
     readonly x: number,
     readonly y: number
+  },
+  readonly mouseClickState: {
+    mousePress: {
+      x: 0,
+      y: 0,
+    },
+    mouseRelease: {
+      x: 0,
+      y: 0,
+    },
+    clickReg: number,
+    lastClickReg: number,
   }
 }
 

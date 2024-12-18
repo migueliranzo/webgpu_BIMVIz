@@ -8,7 +8,7 @@ import { OrbitCamera } from './deps/camera.ts';
 import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 
-export function renderer(device: GPUDevice, loadedModel: any[]) {
+export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -28,7 +28,7 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
   const initialCameraPosition = cameraSettings.eye;
   const camera = new OrbitCamera({ position: initialCameraPosition })
   const inputHandler = createInputHandler(window, canvas);
-  const actionHandler = createActionsHandler(camera);
+  actionHandler().createLeftActions(camera);
 
   const ifcModelshaderModule = device.createShaderModule({
     code: ifcModelShaderCode,
@@ -55,7 +55,7 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
   })
 
   const computeHoverOutputBuffer = device.createBuffer({
-    size: (loadedModel.geometries.length + 1) * 4,
+    size: loadedModel.geometries.length * 4,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
@@ -422,7 +422,7 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
       device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset, mvpMatrix);
       device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE, new Float32Array(flatMatrix));
       device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2, new Float32Array(Object.values(geo.color)));
-      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2 + VEC3_SIZE, Int32Array.of(i));
+      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2 + VEC3_SIZE, Int32Array.of(geo.lookUpId));
       gBufferPassEncoder.setBindGroup(0, gBufferBindGroup, [i * ALIGNED_SIZE]);
       gBufferPassEncoder.drawIndexed(geo.indexArray.length);
     });
@@ -431,7 +431,6 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
 
     const computePassEncoder = commandEnconder.beginComputePass();
     computePassEncoder.setPipeline(computeHoverPipeline);
-    console.log(inputHandler().mouseClickState.clickReg, inputHandler().mouseClickState.lastClickReg);
     device.queue.writeBuffer(mouseCoordsBuffer, 0, Float32Array.of(inputHandler().mouseHover.x, inputHandler().mouseHover.y, inputHandler().mouseClickState.clickReg, inputHandler().mouseClickState.lastClickReg));
     computePassEncoder.setBindGroup(0, computeHoverBindGroup);
     computePassEncoder.dispatchWorkgroups(Math.ceil(1000 / 64));
@@ -462,9 +461,11 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
 
     const copyArrayBuffer = computeSelectedIdStagingBuffer.getMappedRange(0, VEC4_SIZE);
     const data = copyArrayBuffer.slice();
-    //console.log(new Float32Array(data))
+    actionHandler().updateSelectedId(new Float32Array(data)[0] - 1);
+    //console.log(new Float32Array(data)[0] - 1);
+    //console.log(loadedModel.geometries[new Float32Array(data)[0] - 1]);
     computeSelectedIdStagingBuffer.unmap();
-    //requestAnimationFrame(render);
+    requestAnimationFrame(render);
   }
   requestAnimationFrame(render);
 

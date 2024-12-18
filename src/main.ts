@@ -1,9 +1,10 @@
+import { createActionsHandler } from './actions.ts';
 import { renderer } from './renderer.ts'
 import { IfcAPI, ms, IFCUNITASSIGNMENT } from 'web-ifc';
+import { createDataViewModel } from './data_viewModel.ts';
+import { createIfcModelHandler } from './ifcLoader.ts';
 
 async function init() {
-
-
   if (!navigator.gpu) {
     throw Error("webGPU not supported");
   }
@@ -13,72 +14,35 @@ async function init() {
     throw Error("Couldn't request webGPU adapter");
   }
 
+  //Just like we check if there is an adapter we should check if the worker API exists in the browser
+  //if (window.Worker) { }
+
   const device = await adapter.requestDevice();
 
+  const fileBuffer = await fetch('/20220421MODEL REV01.ifc').then((fileResponse) => fileResponse.arrayBuffer());
+  let fileUint8Buffer = new Uint8Array(fileBuffer);
+  const start = ms();
+  const ifcModelHandler = createIfcModelHandler(fileUint8Buffer);
+  //const loadedModelData = ifcModelHandler().parseIfcFile(); //2902
+  const parseIfcFileWithWorkerHandle = ifcModelHandler().parseIfcFileWithWorker()();
+  const loadedModelData = await parseIfcFileWithWorkerHandle.getGeometry(); //255
 
+  const viewModelHandler = createDataViewModel({
+    getDetailedProperties: (id: number) => ifcModelHandler().getDetailedProperties(id),
+  });
 
-  //Fetching of BIM model
-  const ifcAPI = new IfcAPI();
-  ifcAPI.SetWasmPath("../node_modules/web-ifc/");
-  await ifcAPI.Init();
+  const actionHandler = createActionsHandler({
+    getSelectedId: () => viewModelHandler().getSelectedId(),
+    setSelectedId: (id: number) => viewModelHandler().setSelectedId(id)
+  });
 
-  let fileResponse = await fetch('/20220421MODEL REV01.ifc');
-  let fileArrayBuffer = await fileResponse.arrayBuffer();
-  let uInt8FileArray = new Uint8Array(fileArrayBuffer);
+  const loadedItems = parseIfcFileWithWorkerHandle.getDataAttributes().then((x) => {
+    viewModelHandler().setItemPropertiesArray(x);
+    console.log("🛝", ms() - start);
+  });
 
-  //We get geometry data!!!!!
-  async function LoadModel(data: Uint8Array) {
-    const modelMeshVert: any = { geometries: [], vertSize: 0, indSize: 0 };
-    const start = ms();
-    const modelID = ifcAPI.OpenModel(data, { COORDINATE_TO_ORIGIN: true });
-    const time = ms() - start;
-    console.log(`Opening model took ${time} ms`);
-
-    if (ifcAPI.GetModelSchema(modelID) == 'IFC2X3' ||
-      ifcAPI.GetModelSchema(modelID) == 'IFC4' ||
-      ifcAPI.GetModelSchema(modelID) == 'IFC4X3_RC4') {
-
-      //console.log("Trying StreamMeshes with FacetedBrep...");
-      ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
-        // Get the number of geometries this mesh has
-        const numGeometries = mesh.geometries.size();
-        //console.log(`Mesh ${index + 1}/${total} has ${numGeometries} geometries`);
-        // Iterate using the .get() method
-        for (let i = 0; i < numGeometries; i++) {
-          const geom = mesh.geometries.get(i);
-          const geometry = ifcAPI.GetGeometry(modelID, geom.geometryExpressID);
-
-          let vertexArray = ifcAPI.GetVertexArray(
-            geometry.GetVertexData(),
-            geometry.GetVertexDataSize()
-          )
-          let indexArray = ifcAPI.GetIndexArray(
-            geometry.GetIndexData(),
-            geometry.GetIndexDataSize()
-          )
-
-          modelMeshVert.vertSize += vertexArray.byteLength;
-          modelMeshVert.indSize += indexArray.byteLength;
-          modelMeshVert.geometries.push({ color: geom.color, flatTransform: geom.flatTransformation, vertexArray, indexArray });
-
-          //console.log(`Geometry ${i}:`, geom, vertexArray);
-
-          geometry.delete();
-        }
-        // Don't forget to clean up
-        //mesh.delete() NOT WORKING FOR SOME DEVLISH REASON
-      });
-
-    }
-    ifcAPI.CloseModel(modelID);
-
-    return modelMeshVert;
-  }
-
-  let loadedModelVer = await LoadModel(uInt8FileArray)
-  renderer(device, loadedModelVer);
+  console.log("🖌️", ms() - start);
+  renderer(device, loadedModelData, actionHandler);
 }
 
 init();
-
-
