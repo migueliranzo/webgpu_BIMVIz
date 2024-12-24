@@ -35,6 +35,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
   const start = ms();
   const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: true });
   const time = ms() - start;
+  let lookUpId = 0;
   console.log(`Opening model took ${time} ms`);
 
   if (ifcAPI.GetModelSchema(modelID) == 'IFC2X3' ||
@@ -45,7 +46,10 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
       //mesh.geometries isnt iterable and handles pointers to wasm
+      //Literally check if this is not optimal as we probably can do all in 1 same iteration and thats
+      //just more performant sorry functional bros
       for (let i = 0; i < numGeoms; i++) {
+        lookUpId++;
         let placedGeom = mesh.geometries.get(i);
         processedGeoms.push({
           color: placedGeom.color,
@@ -64,7 +68,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           _curr.geometry.GetIndexDataSize()
         )
         _acc.geometries.push({
-          lookUpId: mesh.expressID,
+          //lookUpId: mesh.expressID,
+          lookUpId: lookUpId,
           color: _curr.color,
           flatTransform: _curr.flatTransform,
           vertexArray,
@@ -87,14 +92,17 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     for (let i = 0; i < parsedIfcObj.geometries.length; i += CHUNK_SIZE) {
       const chunk = parsedIfcObj.geometries.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
-        chunk.map(curr =>
-          ifcAPI.properties.getItemProperties(modelID, curr.lookUpId, true)
-        )
+        chunk.map(async curr => {
+          const [propertySet, itemProperties] = await Promise.all([
+            ifcAPI.properties.getPropertySets(modelID, curr.lookUpId, true),
+            ifcAPI.properties.getItemProperties(modelID, curr.lookUpId, true)
+          ]);
+          return { propertySet, itemProperties };
+        })
       );
 
       itemProperties.push(...chunkResults);
       console.log((i + chunk.length) / parsedIfcObj.geometries.length)
-
     }
     postMessage({
       msg: 'itemPropertiesReady',

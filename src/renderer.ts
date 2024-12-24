@@ -391,7 +391,10 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
 
   let lastFrameMS = Date.now()
 
+  let previousSelectedId = 0;
+  let frameCount = 0;
   async function render() {
+    frameCount++;
     const now = Date.now();
     const deltaTime = (now - lastFrameMS) / 1000;
     const commandEnconder = device.createCommandEncoder();
@@ -461,10 +464,18 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
 
     const copyArrayBuffer = computeSelectedIdStagingBuffer.getMappedRange(0, VEC4_SIZE);
     const data = copyArrayBuffer.slice();
-    actionHandler().updateSelectedId(new Float32Array(data)[0] - 1);
+    //console.log(new Float32Array(data)[0] - 1);
+
+    let currentId = new Float32Array(data)[0] - 1;
+    if (currentId != previousSelectedId) {
+      actionHandler().updateSelectedId(new Float32Array(data)[0] - 1);
+      previousSelectedId = new Float32Array(data)[0] - 1;
+    }
     //console.log(new Float32Array(data)[0] - 1);
     //console.log(loadedModel.geometries[new Float32Array(data)[0] - 1]);
     computeSelectedIdStagingBuffer.unmap();
+    //console.log(lastFrameMS / 1000);
+    //console.log(frameCount % curre);
     requestAnimationFrame(render);
   }
   requestAnimationFrame(render);

@@ -33,7 +33,7 @@ async function init() {
 
   const actionHandler = createActionsHandler({
     getSelectedId: () => viewModelHandler().getSelectedId(),
-    setSelectedId: (id: number) => viewModelHandler().setSelectedId(id)
+    setSelectedId: (id: number) => { viewModelHandler().setSelectedId(id) }
   });
 
   const loadedItems = parseIfcFileWithWorkerHandle.getDataAttributes().then((x) => {

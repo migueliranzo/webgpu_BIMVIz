@@ -28,3 +28,13 @@
 .flex-col{flex-direction:column;}
 .align-center{align-items:center}
 .justify-center{justify-content:center}
+
+.transition-all {
+    transition-duration: .15s;
+    transition-property: all;
+    transition-timing-function: cubic-bezier(.4,0,.2,1);
+}
+
+.translateFullyRigthX{
+transform: translateX(100%);
+}
