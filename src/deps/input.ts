@@ -2,6 +2,8 @@
 //
 //Feel free to make modifications
 
+import { cubeColorOffset } from "../geometry/cube";
+
 // Input holds as snapshot of input state
 export default interface Input {
   // Digital input (e.g keyboard state)
@@ -16,14 +18,26 @@ export default interface Input {
   };
   // Analog input (e.g mouse, touchscreen)
   readonly analog: {
-    readonly x: number;
-    readonly y: number;
-    readonly zoom: number;
-    readonly touching: boolean;
+    x: number;
+    y: number;
+    zoom: number;
+    touching: boolean;
   };
   readonly mouseHover: {
     readonly x: number,
-    readonly y: numberinput
+    readonly y: number
+  },
+  readonly mouseClickState: {
+    mousePress: {
+      x: 0,
+      y: 0,
+    },
+    mouseRelease: {
+      x: 0,
+      y: 0,
+    },
+    clickReg: number,
+    lastClickReg: number,
   }
 }
 
@@ -49,6 +63,24 @@ export function createInputHandler(
     y: 0,
     zoom: 0,
   };
+  const mouseClickState = {
+    mousePress: {
+      x: 0,
+      y: 0,
+    },
+    mouseRelease: {
+      x: 0,
+      y: 0,
+    },
+    clickReg: {
+      x: 0,
+      y: 0,
+    },
+    lastClickReg: {
+      x: 0,
+      y: 0,
+    }
+  }
   const mouseHover = {
     x: 0,
     y: 0,
@@ -101,10 +133,12 @@ export function createInputHandler(
   window.addEventListener('keyup', (e) => setDigital(e, false));
 
   canvas.style.touchAction = 'pinch-zoom';
-  canvas.addEventListener('pointerdown', () => {
+  canvas.addEventListener('pointerdown', (e) => {
+    mouseClickState.mousePress = { x: e.offsetX, y: e.offsetY };
     mouseDown = true;
   });
-  canvas.addEventListener('pointerup', () => {
+  canvas.addEventListener('pointerup', (e) => {
+    mouseClickState.mouseRelease = { x: e.offsetX, y: e.offsetY }
     mouseDown = false;
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -114,18 +148,31 @@ export function createInputHandler(
       analog.y += e.movementY;
     }
   });
+
+  canvas.addEventListener('click', (e) => {
+    let diffX = Math.abs(Math.abs(mouseClickState.mousePress.x) - Math.abs(e.offsetX));
+    let diffY = Math.abs(Math.abs(mouseClickState.mousePress.y) - Math.abs(e.offsetY));
+    if ((diffX + diffY) < 25 && !digital.shift) {
+      //Not sure we need to keep track so accurately
+      mouseClickState.lastClickReg = mouseClickState.clickReg;
+      mouseClickState.clickReg = { x: e.offsetX, y: e.offsetY };
+      //A 'bit' hacky but basically triggers a new hit on the same spot, for now will do, we are still figuring the most performant aproach
+      //so its fine to not set everything in stone
+      if (mouseClickState.lastClickReg.x == mouseClickState.clickReg.x) {
+        mouseClickState.clickReg = { x: 10, y: mouseClickState.clickReg.y };
+      }
+    }
+  })
+
   //Will change to anything but the wheel 
   canvas.addEventListener(
     'wheel',
     (e) => {
-      mouseDown = (e.buttons & 1) !== 0;
-      if (mouseDown) {
-        // The scroll value varies substantially between user agents / browsers.
-        // Just use the sign.
-        analog.zoom += Math.sign(e.deltaY);
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      // The scroll value varies substantially between user agents / browsers.
+      // Just use the sign.
+      analog.zoom += Math.sign(e.deltaY);
+      e.preventDefault();
+      e.stopPropagation();
     },
     { passive: false }
   );
@@ -149,7 +196,11 @@ export function createInputHandler(
         zoom: analog.zoom,
         touching: mouseDown,
       },
-      mouseHover
+      mouseHover,
+      mouseClickState: {
+        clickReg: mouseClickState.clickReg.x + mouseClickState.clickReg.y,
+        lastClickReg: mouseClickState.lastClickReg.x + mouseClickState.lastClickReg.y,
+      }
     };
     // Clear the analog values, as these accumulate.
     analog.x = 0;

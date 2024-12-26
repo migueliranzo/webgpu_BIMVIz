@@ -4,10 +4,11 @@ import mainPassShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw'
 import { cubeVertexData, } from './geometry/cube.ts';
 import { getMVPMatrix, getProjectionMatrix, getViewMatrix, getWorldMatrix } from './math_utils.ts';
 import { createInputHandler } from './deps/input.ts';
-import { ArcballCamera } from './deps/camera.ts';
+import { OrbitCamera } from './deps/camera.ts';
+import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 
-export function renderer(device: GPUDevice, loadedModel: any[]) {
+export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -17,8 +18,17 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
   //Getting the context stuff here for now, not sure where it will go
   const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
   const context = canvas.getContext('webgpu')!;
-  const inputHandler = createInputHandler(window, canvas);
 
+  //Camera 
+  const cameraSettings = {
+    eye: vec3.create(2., 2.2, 8.0),
+    target: vec3.create(0., 0.8, 2.)
+  }
+
+  const initialCameraPosition = cameraSettings.eye;
+  const camera = new OrbitCamera({ position: initialCameraPosition })
+  const inputHandler = createInputHandler(window, canvas);
+  actionHandler().createLeftActions(camera);
 
   const ifcModelshaderModule = device.createShaderModule({
     code: ifcModelShaderCode,
@@ -45,13 +55,18 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
   })
 
   const computeHoverOutputBuffer = device.createBuffer({
-    size: (loadedModel.geometries.length + 1) * 4,
+    size: loadedModel.geometries.length * 4,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
-  const computeHoverstagingBuffer = device.createBuffer({
-    size: (loadedModel.geometries.length + 1) * 4,
+  const computeSelectedIdStagingBuffer = device.createBuffer({
+    size: VEC4_SIZE,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+  })
+
+  const computeSelectedIdBuffer = device.createBuffer({
+    size: VEC4_SIZE,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
   const ifcModelVertexBuffer = device.createBuffer({
@@ -97,14 +112,6 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   });
 
-  //Camera 
-  const cameraSettings = {
-    eye: vec3.create(2., 2.2, 8.0),
-    target: vec3.create(0., 0.8, 2.)
-  }
-
-  const initialCameraPosition = cameraSettings.eye;
-  const camera = new ArcballCamera({ position: initialCameraPosition })
 
 
   //Bind groups - layouts
@@ -177,7 +184,15 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
       texture: {
         sampleType: 'uint'
       }
-    }]
+    },
+    {
+      binding: 3,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'storage',
+      }
+    },
+    ]
   })
 
   //Bind groups - creation
@@ -200,7 +215,7 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
       { binding: 1, resource: normalTexture.createView() },
       { binding: 2, resource: albedoTexture.createView() },
       { binding: 3, resource: idTexture.createView() },
-      { binding: 4, resource: { buffer: computeHoverOutputBuffer } },
+      { binding: 4, resource: { buffer: computeSelectedIdBuffer } },
     ]
   })
 
@@ -224,6 +239,12 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
       {
         binding: 2,
         resource: idTexture.createView()
+      },
+      {
+        binding: 3,
+        resource: {
+          buffer: computeSelectedIdBuffer,
+        }
       }
     ]
   })
@@ -369,9 +390,11 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
   })()
 
   let lastFrameMS = Date.now()
-  //Create structure that holds geo and color so we can render any geo points with attached color
 
+  let previousSelectedId = 0;
+  let frameCount = 0;
   async function render() {
+    frameCount++;
     const now = Date.now();
     const deltaTime = (now - lastFrameMS) / 1000;
     const commandEnconder = device.createCommandEncoder();
@@ -385,6 +408,7 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
     let vertexByteOffset = 0;
     let indexByteOffset = 0;
 
+    let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
     loadedModel.geometries.forEach((geo, i) => {
       let _dynamicOffset = ALIGNED_SIZE * i;
       gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, vertexByteOffset, geo.vertexArray.byteLength)
@@ -395,23 +419,22 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
       const flatMatrix = geo.flatTransform;
       const proMat = getProjectionMatrix(800, 600);
       const mvpMatrix = mat4.identity();
-      mat4.multiply(proMat, camera.update(deltaTime, inputHandler()), mvpMatrix);
+      mat4.multiply(proMat, cameraMatrix, mvpMatrix);
       mat4.multiply(mvpMatrix, flatMatrix, mvpMatrix);
 
       device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset, mvpMatrix);
       device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE, new Float32Array(flatMatrix));
       device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2, new Float32Array(Object.values(geo.color)));
-      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2 + VEC3_SIZE, Int32Array.of(i));
+      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2 + VEC3_SIZE, Int32Array.of(geo.lookUpId));
       gBufferPassEncoder.setBindGroup(0, gBufferBindGroup, [i * ALIGNED_SIZE]);
       gBufferPassEncoder.drawIndexed(geo.indexArray.length);
     });
 
     gBufferPassEncoder.end();
 
-
     const computePassEncoder = commandEnconder.beginComputePass();
     computePassEncoder.setPipeline(computeHoverPipeline);
-    device.queue.writeBuffer(mouseCoordsBuffer, 0, Float32Array.of(inputHandler().mouseHover.x, inputHandler().mouseHover.y));
+    device.queue.writeBuffer(mouseCoordsBuffer, 0, Float32Array.of(inputHandler().mouseHover.x, inputHandler().mouseHover.y, inputHandler().mouseClickState.clickReg, inputHandler().mouseClickState.lastClickReg));
     computePassEncoder.setBindGroup(0, computeHoverBindGroup);
     computePassEncoder.dispatchWorkgroups(Math.ceil(1000 / 64));
     computePassEncoder.end();
@@ -423,26 +446,36 @@ export function renderer(device: GPUDevice, loadedModel: any[]) {
     mainPassEncoder.end();
 
     //This just handles reading the data on JS for testing purposes
-    //commandEnconder.copyBufferToBuffer(
-    //  computeHoverOutputBuffer,
-    //  0,
-    //  computeHoverstagingBuffer,
-    //  0,
-    //  (loadedModel.geometries.length + 1) * 4,
-    //)
+    commandEnconder.copyBufferToBuffer(
+      computeSelectedIdBuffer,
+      0,
+      computeSelectedIdStagingBuffer,
+      0,
+      VEC4_SIZE,
+    )
 
     device.queue.submit([commandEnconder.finish()]);
 
-    //await computeHoverstagingBuffer.mapAsync(
-    //  GPUMapMode.READ,
-    //  0,
-    //  (loadedModel.geometries.length + 1) * 4,
-    //);
+    await computeSelectedIdStagingBuffer.mapAsync(
+      GPUMapMode.READ,
+      0,
+      VEC4_SIZE
+    );
 
-    //const copyArrayBuffer = computeHoverstagingBuffer.getMappedRange(0, (loadedModel.geometries.length + 1) * 4);
-    //const data = copyArrayBuffer.slice();
-    //console.log(new Float32Array(data))
-    //computeHoverstagingBuffer.unmap();
+    const copyArrayBuffer = computeSelectedIdStagingBuffer.getMappedRange(0, VEC4_SIZE);
+    const data = copyArrayBuffer.slice();
+    //console.log(new Float32Array(data)[0] - 1);
+
+    let currentId = new Float32Array(data)[0] - 1;
+    if (currentId != previousSelectedId) {
+      actionHandler().updateSelectedId(new Float32Array(data)[0] - 1);
+      previousSelectedId = new Float32Array(data)[0] - 1;
+    }
+    //console.log(new Float32Array(data)[0] - 1);
+    //console.log(loadedModel.geometries[new Float32Array(data)[0] - 1]);
+    computeSelectedIdStagingBuffer.unmap();
+    //console.log(lastFrameMS / 1000);
+    //console.log(frameCount % curre);
     requestAnimationFrame(render);
   }
   requestAnimationFrame(render);
