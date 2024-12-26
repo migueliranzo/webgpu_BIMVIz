@@ -27,6 +27,12 @@ async function init() {
   const parseIfcFileWithWorkerHandle = ifcModelHandler().parseIfcFileWithWorker()();
   const loadedModelData = await parseIfcFileWithWorkerHandle.getGeometry(); //255
 
+  const loadedItems = parseIfcFileWithWorkerHandle.getDataAttributes().then((x) => {
+    viewModelHandler().setItemPropertiesArray(x);
+    viewModelHandler().setSelectedId(612)
+    console.log("🛝", ms() - start);
+  });
+
   const viewModelHandler = createDataViewModel({
     getDetailedProperties: (id: number) => ifcModelHandler().getDetailedProperties(id),
   });
@@ -34,11 +40,6 @@ async function init() {
   const actionHandler = createActionsHandler({
     getSelectedId: () => viewModelHandler().getSelectedId(),
     setSelectedId: (id: number) => { viewModelHandler().setSelectedId(id) }
-  });
-
-  const loadedItems = parseIfcFileWithWorkerHandle.getDataAttributes().then((x) => {
-    viewModelHandler().setItemPropertiesArray(x);
-    console.log("🛝", ms() - start);
   });
 
   console.log("🖌️", ms() - start);

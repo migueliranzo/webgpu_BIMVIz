@@ -8,6 +8,7 @@ export interface parsedIfcObject {
 
 export interface parsedGeometryData {
   lookUpId: number,
+  meshExpressId: number,
   color: Color,
   flatTransform: number[],
   vertexArray: Float32Array,
@@ -68,7 +69,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           _curr.geometry.GetIndexDataSize()
         )
         _acc.geometries.push({
-          //lookUpId: mesh.expressID,
+          meshExpressId: mesh.expressID,
           lookUpId: lookUpId,
           color: _curr.color,
           flatTransform: _curr.flatTransform,
@@ -89,21 +90,24 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     const CHUNK_SIZE = 50;
     const itemProperties = [];
 
+    //Revisit the setup here because with lookupId instead of meshExpressID goes better so maybe now promises can be waited better than now
     for (let i = 0; i < parsedIfcObj.geometries.length; i += CHUNK_SIZE) {
       const chunk = parsedIfcObj.geometries.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
         chunk.map(async curr => {
           const [propertySet, itemProperties] = await Promise.all([
-            ifcAPI.properties.getPropertySets(modelID, curr.lookUpId, true),
-            ifcAPI.properties.getItemProperties(modelID, curr.lookUpId, true)
+            ifcAPI.properties.getPropertySets(modelID, curr.meshExpressId, true),
+            ifcAPI.properties.getItemProperties(modelID, curr.meshExpressId, true)
           ]);
           return { propertySet, itemProperties };
         })
       );
 
+
       itemProperties.push(...chunkResults);
       console.log((i + chunk.length) / parsedIfcObj.geometries.length)
     }
+
     postMessage({
       msg: 'itemPropertiesReady',
       itemProperties

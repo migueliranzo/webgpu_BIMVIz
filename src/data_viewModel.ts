@@ -13,46 +13,40 @@ export function createDataViewModel(detailedPropertiesCallbacks: { getDetailedPr
   }
 
   const updateRightSidePropsSync = function() {
-    const items = itemsProperties[selectedId];
-    console.log(items)
-    //let htmlList = {};
+    const itemPropertiesObject = itemsProperties[selectedId].itemProperties;
     const htmlList = document.createElement('div');
-    recursion(items, htmlList);
-    console.log(htmlList)
+    mapPropertiesToHtml(itemPropertiesObject, htmlList);
+    htmlList.classList.add('gap-5', 'flex', 'flex-col');
     RIGHTSIDEPANELELEMENT.appendChild(htmlList)
     //RIGHTSIDEPANELELEMENT.innerHTML = JSON.stringify(itemsProperties[selectedId])
   }
 
-  function recursion(list: any, htmlist: HTMLDivElement) {
+  function mapPropertiesToHtml(list: any, htmlist: HTMLDivElement) {
+    RIGHTSIDEPANELELEMENT.childNodes[0]?.remove()
     for (const value in list) {
-      //htmlist[value] = [];
-      const holder = document.createElement('div');
-      holder.innerText = value;
-      if (typeof list[value] === 'object' && list[value] !== null) {
-        //htmlist[value].push(list[value])
-        const spanValue = document.createElement('span');
-        spanValue.innerText = list[value];
-        htmlist.appendChild(spanValue);
-        recursion(list[value], holder)
+      const propertyRow = document.createElement('div');
+      propertyRow.classList.add('flex', 'flex-row', 'justify-between');
+      const propertyTitle = document.createElement('div');
+      const propertyValue = document.createElement('div');
+      propertyTitle.classList.add('property-title')
+      propertyValue.classList.add('property-value')
+      propertyTitle.innerText = value;
+      if (typeof list[value] === 'object') {
+        propertyValue.innerText = list[value].value ? list[value].value : list[value].expressID;
       } else {
-        const spanValue = document.createElement('span');
-        spanValue.innerText = list[value];
-        holder.classList.add('header')
-        htmlist.appendChild(spanValue);
-        //htmlist[value].push(list[value])
+        propertyValue.innerText = list[value];
       }
-
-      htmlist.appendChild(holder)
+      propertyRow.appendChild(propertyTitle);
+      propertyRow.appendChild(propertyValue);
+      htmlist.appendChild(propertyRow);
     }
   }
 
   const hidePanel = function() {
     RIGHTSIDEPANELELEMENT.classList.add('translateFullyRigthX');
-    //console.log(RIGHTSIDEPANELELEMENT.classList)
   }
   const showPanel = function() {
     RIGHTSIDEPANELELEMENT.classList.remove('translateFullyRigthX');
-    //console.log(RIGHTSIDEPANELELEMENT.classList)
   }
 
   const setSelectedId = function(id: number) {
