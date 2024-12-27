@@ -90,16 +90,17 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     const CHUNK_SIZE = 50;
     const itemProperties = [];
 
+
     //Revisit the setup here because with lookupId instead of meshExpressID goes better so maybe now promises can be waited better than now
     for (let i = 0; i < parsedIfcObj.geometries.length; i += CHUNK_SIZE) {
       const chunk = parsedIfcObj.geometries.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
         chunk.map(async curr => {
-          const [propertySet, itemProperties] = await Promise.all([
-            ifcAPI.properties.getPropertySets(modelID, curr.meshExpressId, true),
-            ifcAPI.properties.getItemProperties(modelID, curr.meshExpressId, true)
+          const [itemProperties] = await Promise.all([
+            //ifcAPI.properties.getPropertySets(modelID, curr.meshExpressId, true),
+            ifcAPI.properties.getItemProperties(modelID, curr.meshExpressId, false)
           ]);
-          return { propertySet, itemProperties };
+          return { itemProperties };
         })
       );
 
@@ -112,7 +113,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       msg: 'itemPropertiesReady',
       itemProperties
     });
-
+    itemProperties;
   }
 
   ifcAPI.CloseModel(modelID);

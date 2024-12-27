@@ -28,7 +28,7 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
   const initialCameraPosition = cameraSettings.eye;
   const camera = new OrbitCamera({ position: initialCameraPosition })
   const inputHandler = createInputHandler(window, canvas);
-  actionHandler().createLeftActions(camera);
+  actionHandler.createLeftActions(camera);
 
   const ifcModelshaderModule = device.createShaderModule({
     code: ifcModelShaderCode,
@@ -466,9 +466,10 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     const data = copyArrayBuffer.slice();
     //console.log(new Float32Array(data)[0] - 1);
 
+    //TODO: fix this lmao too much for the loop
     let currentId = new Float32Array(data)[0] - 1;
     if (currentId != previousSelectedId) {
-      actionHandler().updateSelectedId(new Float32Array(data)[0] - 1);
+      actionHandler.updateSelectedId(new Float32Array(data)[0] - 1);
       previousSelectedId = new Float32Array(data)[0] - 1;
     }
     //console.log(new Float32Array(data)[0] - 1);

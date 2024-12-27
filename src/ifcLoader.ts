@@ -2,112 +2,56 @@ import { IfcAPI, Color, ms, IFCUNITASSIGNMENT } from 'web-ifc';
 import { parsedIfcObject } from './worker';
 
 
-const ifcAPI = new IfcAPI();
-ifcAPI.SetWasmPath("../node_modules/web-ifc/");
-await ifcAPI.Init();
+//const ifcAPI = new IfcAPI();
+//ifcAPI.SetWasmPath("../node_modules/web-ifc/");
+//await ifcAPI.Init();
 
-//Worker test
 const myWorker = new Worker(new URL("worker.ts", import.meta.url), { type: 'module' });
-
 
 export function createIfcModelHandler(inputFile: Uint8Array) {
   let FILE = inputFile;
 
   const parseIfcFileWithWorker = function() {
     myWorker.postMessage({ msg: 'parseFile', file: FILE });
+    let geoResolve;
+    let itemPropertiesResolve;
 
-    const getGeometry = async function() {
-      return await new Promise((resolve) => {
-        myWorker.onmessage = (x) => {
-          if (x.data.msg == 'geometryReady') {
-            resolve(x.data.parsedIfcObj)
-          }
-        }
-      })
-    }
-
-    const getDataAttributes = async function() {
-      return await new Promise((resolve) => {
-        myWorker.onmessage = (x) => {
-          if (x.data.msg == 'itemPropertiesReady') {
-            resolve(x.data.itemProperties)
-          }
-        }
-      })
-    }
-
-    //I want to revisit if I truly need to return the whole clousure or not, like returning just the functions
-    return (() => {
-      return {
-        getGeometry,
-        getDataAttributes
-      }
+    const geoPromise = new Promise(resolve => {
+      geoResolve = resolve;
     })
-  }
+
+    const itemPropertiesPromise = new Promise(resolve => {
+      itemPropertiesResolve = resolve;
+    })
 
 
-  const parseIfcFile = function() {
-    let parsedIfcObj: parsedIfcObject = { geometries: [], vertSize: 0, indSize: 0 };
-    const start = ms();
-    const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: true });
-    const time = ms() - start;
-    console.log(`Opening model took ${time} ms`);
+    myWorker.onmessage = (x) => {
+      switch (x.data.msg) {
 
-    if (ifcAPI.GetModelSchema(modelID) == 'IFC2X3' ||
-      ifcAPI.GetModelSchema(modelID) == 'IFC4' ||
-      ifcAPI.GetModelSchema(modelID) == 'IFC4X3_RC4') {
-
-      ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
-        const numGeoms = mesh.geometries.size();
-        const processedGeoms = [];
-        //mesh.geometries isnt iterable and handles pointers to wasm
-        for (let i = 0; i < numGeoms; i++) {
-          let placedGeom = mesh.geometries.get(i);
-          processedGeoms.push({
-            color: placedGeom.color,
-            flatTransform: placedGeom.flatTransformation,
-            geometry: ifcAPI.GetGeometry(modelID, placedGeom.geometryExpressID),
-          });
+        case 'geometryReady': {
+          geoResolve(x.data.parsedIfcObj);
+          break;
         }
-
-        processedGeoms.reduce((_acc: parsedIfcObject, _curr) => {
-          const vertexArray = ifcAPI.GetVertexArray(
-            _curr.geometry.GetVertexData(),
-            _curr.geometry.GetVertexDataSize()
-          );
-          const indexArray = ifcAPI.GetIndexArray(
-            _curr.geometry.GetIndexData(),
-            _curr.geometry.GetIndexDataSize()
-          )
-          _acc.geometries.push({
-            lookUpId: mesh.expressID,
-            color: _curr.color,
-            flatTransform: _curr.flatTransform,
-            vertexArray,
-            indexArray
-          })
-          _acc.vertSize += vertexArray.byteLength;
-          _acc.indSize += indexArray.byteLength;
-          return _acc;
-        }, parsedIfcObj);
-
-        //still not working
-        //mesh.delete()
-      });
-
-      let holder = [];
-      parsedIfcObj.geometries.forEach(async (x) => {
-        holder.push(await ifcAPI.properties.getItemProperties(modelID, x.lookUpId, true));
-      })
-      console.log(holder);
+        case 'itemPropertiesReady': {
+          itemPropertiesResolve(x.data.itemProperties)
+          myWorker.terminate();
+          myWorker.onmessage = null; //values need to liberated from the onmessage closure as itemPropertiesResolve still holds the huge array since the promise still holds ref to the resolve and the resolve does to the woker.onmessage closure
+          break;
+        }
+      }
 
     }
-    ifcAPI.CloseModel(modelID);
 
-    return parsedIfcObj;
+    return {
+      getGeometry: geoPromise,
+      getDataAttributes: itemPropertiesPromise
+    }
   }
 
+
+  //TODO: since we parse basic properties a method for more advanced ones wouldnt be weird
   const getDetailedProperties = async function(expressID: number) {
+    return;
     const start = ms();
     const modelID = ifcAPI.OpenModel(FILE);
     const time = ms() - start;
@@ -120,7 +64,6 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
 
   return (() => {
     return {
-      parseIfcFile,
       getDetailedProperties,
       parseIfcFileWithWorker
     }
