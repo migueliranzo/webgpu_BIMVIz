@@ -18,7 +18,6 @@ export interface parsedGeometryData {
 
 
 onmessage = (x) => {
-  console.log("got it")
   if (x.data.msg == 'parseFile') {
     parseIfcFile(x.data.file)
   }
@@ -26,17 +25,17 @@ onmessage = (x) => {
 
 
 const parseIfcFile = async function(FILE: Uint8Array) {
-  //Had to move the ifcAPI Init here as the worker body wouldnt await by itself the ifcAPI.init() it has to be somewhere we call initially once ideally
   const ifcAPI = new IfcAPI();
   ifcAPI.SetWasmPath("../node_modules/web-ifc/");
   await ifcAPI.Init();
-  //use ifcAPI.Dispose() when done here
 
   let parsedIfcObj: parsedIfcObject = { geometries: [], vertSize: 0, indSize: 0 };
   const start = ms();
   const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: true });
   const time = ms() - start;
   let lookUpId = 0;
+  const instanceMap = new Map();
+
   console.log(`Opening model took ${time} ms`);
 
   if (ifcAPI.GetModelSchema(modelID) == 'IFC2X3' ||
@@ -46,9 +45,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
-      //mesh.geometries isnt iterable and handles pointers to wasm
-      //Literally check if this is not optimal as we probably can do all in 1 same iteration and thats
-      //just more performant sorry functional bros
       for (let i = 0; i < numGeoms; i++) {
         lookUpId++;
         let placedGeom = mesh.geometries.get(i);
@@ -78,14 +74,37 @@ const parseIfcFile = async function(FILE: Uint8Array) {
         })
         _acc.vertSize += vertexArray.byteLength;
         _acc.indSize += indexArray.byteLength;
+
+        let geometryKey = (vertexArray.byteLength * 31 + vertexArray[0] * 37 + vertexArray[vertexArray.length - 1] * 41) | 0;
+
+        if (!instanceMap.has(geometryKey)) {
+          instanceMap.set(geometryKey, {
+            baseGeometry: {
+              vertexArray,
+              indexArray
+            },
+            instances: []
+          })
+        }
+
+        instanceMap.get(geometryKey).instances.push({
+          meshExpressId: mesh.expressID,
+          lookUpId: lookUpId,
+          color: _curr.color,
+          flatTransform: _curr.flatTransform,
+        });
+
         return _acc;
       }, parsedIfcObj);
+
 
       //still not working
       //mesh.delete()
     });
 
-    postMessage({ msg: 'geometryReady', parsedIfcObj });
+    console.log(parsedIfcObj)
+    //postMessage({ msg: 'geometryReady', parsedIfcObj });
+    postMessage({ msg: 'geometryReady', instanceMap });
 
     const CHUNK_SIZE = 50;
     const itemProperties = [];

@@ -23,12 +23,14 @@ async function init() {
   const ifcModelHandler = createIfcModelHandler(fileUint8Buffer);
   const parseIfcFileWithWorkerHandle = ifcModelHandler().parseIfcFileWithWorker();
   const loadedModelData = await parseIfcFileWithWorkerHandle.getGeometry;
+  console.log(loadedModelData)
 
   const viewModelHandler = createDataViewModel();
   const actionHandler = createActionsHandler();
 
   console.log("🖌️", ms() - start);
   renderer(device, loadedModelData, actionHandler);
+  console.log(loadedModelData);
 
   const loadedItems = await parseIfcFileWithWorkerHandle.getDataAttributes;
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(loadedItems);

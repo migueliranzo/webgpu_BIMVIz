@@ -8,7 +8,7 @@ import { OrbitCamera } from './deps/camera.ts';
 import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 
-export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any) {
+export function renderer(device: GPUDevice, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -48,14 +48,30 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     alphaMode: 'premultiplied',
   })
 
+  //we loop here unless we need this data somehwere else as well
+  let verCountLd = 0;
+  let indCountLd = 0;
+  let instancesCountLd = 0;
+  loadedModel.forEach((x) => {
+    verCountLd += x.baseGeometry.vertexArray.byteLength;
+    indCountLd += x.baseGeometry.indexArray.byteLength;
+    instancesCountLd += x.instances.length;
+  })
+
   //Buffer creation
+  const drawIndirectCommandBuffer = device.createBuffer({
+    size: (loadedModel.size * 5) * 4,
+    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
+    label: 'drawCommandBuffer'
+  })
+
   const mouseCoordsBuffer = device.createBuffer({
     size: VEC4_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   })
 
   const computeHoverOutputBuffer = device.createBuffer({
-    size: loadedModel.geometries.length * 4,
+    size: loadedModel.size * 4,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
@@ -70,17 +86,21 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
   })
 
   const ifcModelVertexBuffer = device.createBuffer({
-    size: loadedModel.vertSize,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+    size: verCountLd,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    label: 'instanceVertexBuffer'
   })
+
   const ifcModelIndexBuffer = device.createBuffer({
-    size: loadedModel.indSize,
-    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
+    size: indCountLd,
+    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    label: 'instanceIndexBuffer'
   })
 
   const gBufferUniformsBuffer = device.createBuffer({
-    size: loadedModel.geometries.length * ALIGNED_SIZE,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    size: instancesCountLd * ALIGNED_SIZE,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    label: 'instanceUniformsBuffer'
   })
 
   //G Buffer textures
@@ -119,7 +139,7 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     entries: [{
       binding: 0,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-      buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: MAT4_SIZE + MAT4_SIZE + VEC4_SIZE }
+      buffer: { type: 'read-only-storage', hasDynamicOffset: false, minBindingSize: MAT4_SIZE + MAT4_SIZE + MAT4_SIZE + VEC4_SIZE }
     }]
   });
 
@@ -202,7 +222,7 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
       binding: 0,
       resource: {
         buffer: gBufferUniformsBuffer,
-        size: MAT4_SIZE + MAT4_SIZE + VEC4_SIZE,
+        //size: MAT4_SIZE + MAT4_SIZE + MAT4_SIZE + VEC4_SIZE,
         offset: 0
       }
     }]
@@ -281,7 +301,7 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
         format: 'float32x3'
       }],
       arrayStride: 4 * (3 + 3),
-      stepMode: 'vertex'
+      stepMode: 'instance'
     }];
 
     const pipelineDescriptor: GPURenderPipelineDescriptor = {
@@ -378,20 +398,51 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     },
   };
 
-  (() => {
-    let _offsetGeo = 0;
-    let _offsetIndex = 0;
-    loadedModel.geometries.forEach((geo, _i) => {
-      device.queue.writeBuffer(ifcModelVertexBuffer, _offsetGeo, geo.vertexArray);
-      device.queue.writeBuffer(ifcModelIndexBuffer, _offsetIndex, geo.indexArray);
-      _offsetGeo += geo.vertexArray.byteLength;
-      _offsetIndex += geo.indexArray.byteLength;
-    });
-  })()
+  let _offsetGeo = 0;
+  let _offsetIndex = 0;
+  const commandArray = new Uint32Array(loadedModel.size * 3);
+  let testI = 0;
+  loadedModel.forEach((instanceGroup) => {
+    commandArray[testI] = instanceGroup.baseGeometry.indexArray.length; //Index count
+    commandArray[testI + 1] = instanceGroup.instances.length; //Instance count
+    // commandArray[testI + 2] = _offsetIndex; //Index buffer offset
+    //commandArray[testI + 3] = _offsetGeo//base vertex?
+    //commandArray[_offsetGeo *_i+ 4] =  //first instance?
+    device.queue.writeBuffer(ifcModelVertexBuffer, _offsetGeo, instanceGroup.baseGeometry.vertexArray);
+    device.queue.writeBuffer(ifcModelIndexBuffer, _offsetIndex, instanceGroup.baseGeometry.indexArray);
+    _offsetGeo += instanceGroup.baseGeometry.vertexArray.byteLength;
+    _offsetIndex += instanceGroup.baseGeometry.indexArray.length;
+    console.log(instanceGroup, _offsetGeo)
+    testI += 5;
+  })
+  device.queue.writeBuffer(drawIndirectCommandBuffer, 0, commandArray);
+  console.log("commandBuff size", (loadedModel.size * 5) * 4);
+  console.log(commandArray);
+
+
+  //(() => {
+  //  let _offsetGeo = 0;
+  //  let _offsetIndex = 0;
+  //  loadedModel.geometries.forEach((geo, _i) => {
+  //    device.queue.writeBuffer(ifcModelVertexBuffer, _offsetGeo, geo.vertexArray);
+  //    device.queue.writeBuffer(ifcModelIndexBuffer, _offsetIndex, geo.indexArray);
+  //    _offsetGeo += geo.vertexArray.byteLength;
+  //    _offsetIndex += geo.indexArray.byteLength;
+  //  });
+  //})()
+
+  let previousSelectedId = 0;
+
+  const updateId = (currentId: number) => {
+    if (currentId != previousSelectedId) {
+      actionHandler.updateSelectedId(currentId);
+      previousSelectedId = currentId;
+    }
+  }
 
   let lastFrameMS = Date.now()
 
-  let previousSelectedId = 0;
+  const fpsElem = document.querySelector("#fps")!;
   let frameCount = 0;
   async function render() {
     frameCount++;
@@ -399,6 +450,8 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     const deltaTime = (now - lastFrameMS) / 1000;
     const commandEnconder = device.createCommandEncoder();
     lastFrameMS = now;
+    const fps = 1 / deltaTime;             // compute frames per second
+    fpsElem.textContent = fps.toFixed(1);
 
     let canvasView = context.getCurrentTexture().createView();
     mainPassDescriptor.colorAttachments[0].view = canvasView;
@@ -409,27 +462,53 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     let indexByteOffset = 0;
 
     let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
-    loadedModel.geometries.forEach((geo, i) => {
-      let _dynamicOffset = ALIGNED_SIZE * i;
-      gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, vertexByteOffset, geo.vertexArray.byteLength)
-      gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', indexByteOffset, geo.indexArray.byteLength);
-      vertexByteOffset += geo.vertexArray.byteLength;
-      indexByteOffset += geo.indexArray.byteLength;
+    const proMat = getProjectionMatrix(800, 600);
+    let incr = 0;
+    let _dynamicOffset = 0;
+    loadedModel.forEach((instanceGroup) => {
+      //so why offset here if we may be able to offset on the draw command?
+      //Or we could avoid this constant setting of vertice and dindeces buffers if we can add the offsets on the draw command
+      //TODO: another thing is that the uniform data we see in the draw call like that should be instance per instance and not draw call by draw call?
+      gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, vertexByteOffset, instanceGroup.baseGeometry.vertexArray.byteLength)
+      gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', indexByteOffset, instanceGroup.baseGeometry.indexArray.byteLength);
+      vertexByteOffset += instanceGroup.baseGeometry.vertexArray.byteLength;
+      indexByteOffset += instanceGroup.baseGeometry.indexArray.byteLength;
 
-      const flatMatrix = geo.flatTransform;
-      const proMat = getProjectionMatrix(800, 600);
-      const mvpMatrix = mat4.identity();
-      mat4.multiply(proMat, cameraMatrix, mvpMatrix);
-      mat4.multiply(mvpMatrix, flatMatrix, mvpMatrix);
+      let incrIns = 0;
+      //console.log(instanceGroup.instances.length, instanceGroup.instances.length * (ALIGNED_SIZE / 4));
+      const instanceData = new Float32Array(instanceGroup.instances.length * (ALIGNED_SIZE / 4));
+      instanceGroup.instances.forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
+        //flat matrix, projection matrix and lookupId dont need frame updates btw
+        let currOffset = 64 * incrIns;
+        instanceData.set(cameraMatrix, currOffset);
+        instanceData.set(proMat, currOffset + 16);
+        instanceData.set(instance.flatTransform, currOffset + 16 * 2);
+        instanceData.set([instance.color.x, instance.color.y, instance.color.z], currOffset + 16 * 3);
+        instanceData.set([instance.meshExpressId], currOffset + (16 * 3) + 3);
+        incrIns++;
+      })
 
-      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset, mvpMatrix);
-      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE, new Float32Array(flatMatrix));
-      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2, new Float32Array(Object.values(geo.color)));
-      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2 + VEC3_SIZE, Int32Array.of(geo.lookUpId));
-      gBufferPassEncoder.setBindGroup(0, gBufferBindGroup, [i * ALIGNED_SIZE]);
-      gBufferPassEncoder.drawIndexed(geo.indexArray.length);
+      //TODO: offsets here are probably wrong they dont increment like per array? 
+      console.log(instanceData);
+      device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset, instanceData);
+      gBufferPassEncoder.setBindGroup(0, gBufferBindGroup);
+      gBufferPassEncoder.drawIndexedIndirect(drawIndirectCommandBuffer, incr * (4 * 5));
+
+      //TODO: check here maybe
+      _dynamicOffset += (instanceGroup.instances.length * ALIGNED_SIZE);
+      //const flatMatrix = geo.flatTransform;
+      //const proMat = getProjectionMatrix(800, 600);
+      //const mvpMatrix = mat4.identity();
+
+      //device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset, cameraMatrix);
+      //device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE, proMat);
+      //device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 2, new Float32Array(flatMatrix));
+      //device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 3, new Float32Array(Object.values(geo.color)));
+      //device.queue.writeBuffer(gBufferUniformsBuffer, _dynamicOffset + MAT4_SIZE * 3 + VEC3_SIZE, Int32Array.of(geo.lookUpId));
+      //gBufferPassEncoder.setBindGroup(0, gBufferBindGroup, [i * ALIGNED_SIZE]);
+      //gBufferPassEncoder.drawIndexed(geo.indexArray.length);
+      incr++;
     });
-
     gBufferPassEncoder.end();
 
     const computePassEncoder = commandEnconder.beginComputePass();
@@ -466,18 +545,18 @@ export function renderer(device: GPUDevice, loadedModel: any, actionHandler: any
     const data = copyArrayBuffer.slice();
     //console.log(new Float32Array(data)[0] - 1);
 
-    //TODO: fix this lmao too much for the loop
-    let currentId = new Float32Array(data)[0] - 1;
-    if (currentId != previousSelectedId) {
-      actionHandler.updateSelectedId(new Float32Array(data)[0] - 1);
-      previousSelectedId = new Float32Array(data)[0] - 1;
-    }
+    updateId(new Float32Array(data)[0] - 1)
+    //let currentId = new Float32Array(data)[0] - 1;
+    //if (currentId != previousSelectedId) {
+    //  actionHandler.updateSelectedId(new Float32Array(data)[0] - 1);
+    //  previousSelectedId = new Float32Array(data)[0] - 1;
+    //}
     //console.log(new Float32Array(data)[0] - 1);
     //console.log(loadedModel.geometries[new Float32Array(data)[0] - 1]);
     computeSelectedIdStagingBuffer.unmap();
     //console.log(lastFrameMS / 1000);
     //console.log(frameCount % curre);
-    requestAnimationFrame(render);
+    //requestAnimationFrame(render);
   }
   requestAnimationFrame(render);
 

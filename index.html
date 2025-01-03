@@ -8,6 +8,7 @@
   </head>
   <body>
     <div id="app">
+      <div id='fps'></div>
       <canvas width='800px' height='600px' id='canvas_main_render_target'></canvas>
 
       <div class='p-2' style='position:absolute; top: 0; left: -20; padding-top: 3rem; '>
@@ -20,9 +21,8 @@
 
 
       </div>
-
         <div style='max-width: 300px; height:calc(100dvh - 3.8rem); top: 3.8rem; position: absolute; right: 0; overflow: hidden'>
-        <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-2' style='height: 100%; display: flex; overflow: hidden'></div>
+        <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-2' style='height: 100%; display: flex; overflow: hidden;'></div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

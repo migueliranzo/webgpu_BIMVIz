@@ -29,13 +29,14 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
       switch (x.data.msg) {
 
         case 'geometryReady': {
-          geoResolve(x.data.parsedIfcObj);
+          geoResolve(x.data.instanceMap);
+          //geoResolve(x.data.parsedIfcObj);
           break;
         }
         case 'itemPropertiesReady': {
           itemPropertiesResolve(x.data.itemProperties)
-          myWorker.terminate();
-          myWorker.onmessage = null; //values need to liberated from the onmessage closure as itemPropertiesResolve still holds the huge array since the promise still holds ref to the resolve and the resolve does to the woker.onmessage closure
+          //myWorker.terminate();   //TODO: this has to be removed when done testing the worker.ts code
+          //myWorker.onmessage = null; //values need to liberated from the onmessage closure as itemPropertiesResolve still holds the huge array since the promise still holds ref to the resolve and the resolve does to the woker.onmessage closure
           break;
         }
       }
