@@ -1,10 +1,33 @@
 import { OrbitCamera } from "./deps/camera";
 
-export function createActionsHandler(selectedIdCallbacks: { setSelectedId: (id: number) => void, getSelectedId: () => number }) {
+function createLocalEventEmitter() {
+  // Using a DOM Event Target gives us a built-in event system
+  const eventTarget = new EventTarget();
+
+  return {
+    emit(value) {
+      // Create a new event with our value
+      const event = new CustomEvent('change', { detail: value });
+      eventTarget.dispatchEvent(event);
+    },
+
+    subscribe(callback) {
+      const handler = (e) => callback(e.detail);
+      eventTarget.addEventListener('change', handler);
+      // Return unsubscribe function to clean up
+      return () => eventTarget.removeEventListener('change', handler);
+    }
+  };
+}
+
+export function createActionsHandler() {
+  const events = createLocalEventEmitter();
   const viewModes = ['setFrontView', 'setRightView', 'setTopView', 'setLeftView', 'setBackView', 'setBottomView'];
   const viewBtn = {
     clickCount: 0,
   }
+
+  let selectedId: number;
 
   const createLeftActions = function(camera: OrbitCamera) {
     document.getElementById('changeViewBtn')!.addEventListener(('click'), (e) => {
@@ -13,20 +36,26 @@ export function createActionsHandler(selectedIdCallbacks: { setSelectedId: (id: 
   }
 
   const updateSelectedId = function(id: number) {
-    selectedIdCallbacks.setSelectedId(id);
+    document.getElementById('rightSidePropertiesPanel')!.classList.add('translateFullyRigthX');
+    if (id != selectedId && id > -1) {
+      selectedId = id;
+      document.getElementById('rightSidePropertiesPanel')!.classList.remove('translateFullyRigthX');
+      events.emit(selectedId);
+    }
   };
+
   const getSelectedId = function() {
-    return selectedIdCallbacks.getSelectedId();
+    console.log("getting nothing");
   }
 
-  return (() => {
-    return {
-      viewBtnState: viewBtn,
-      updateSelectedId,
-      getSelectedId,
-      createLeftActions
-    };
-  })
+  return {
+    viewBtnState: viewBtn,
+    updateSelectedId,
+    getSelectedId,
+    createLeftActions,
+    onChange: events.subscribe
+  };
+
 }
 
 

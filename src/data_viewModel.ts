@@ -1,24 +1,24 @@
 import { INTEGER } from "web-ifc";
 
-export function createDataViewModel(detailedPropertiesCallbacks: { getDetailedProperties: (id: number) => Promise<{ props: any[], itemProp: any }> }) {
-  let selectedId = 0;
-  const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
-  let itemsProperties = [];
+export function createItemspropertyarrayhandle(items) {
 
-  //So this is here thats cool but we should probably choose some basic properties to avoid calling openModel
-  //SO THIS IS FOR TESTING PURPOSES
-  const updateRightSidePropertiesPanel = async function() {
-    const fetchedProperties = await detailedPropertiesCallbacks.getDetailedProperties(selectedId);
-    RIGHTSIDEPANELELEMENT!.innerHTML = JSON.stringify(fetchedProperties);
+  return {
+    getItemProperties(id) {
+      return { ...items[id] };
+    },
   }
+}
 
-  const updateRightSidePropsSync = function() {
-    const itemPropertiesObject = itemsProperties[selectedId].itemProperties;
+export function createDataViewModel() {
+  const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
+
+  const updateRightSidePropsSync = function(propertyList) {
+    let itemsProperties = propertyList.itemProperties;
+    const itemPropertiesObject = itemsProperties;
     const htmlList = document.createElement('div');
     mapPropertiesToHtml(itemPropertiesObject, htmlList);
     htmlList.classList.add('gap-5', 'flex', 'flex-col');
     RIGHTSIDEPANELELEMENT.appendChild(htmlList)
-    //RIGHTSIDEPANELELEMENT.innerHTML = JSON.stringify(itemsProperties[selectedId])
   }
 
   function mapPropertiesToHtml(list: any, htmlist: HTMLDivElement) {
@@ -42,37 +42,8 @@ export function createDataViewModel(detailedPropertiesCallbacks: { getDetailedPr
     }
   }
 
-  const hidePanel = function() {
-    RIGHTSIDEPANELELEMENT.classList.add('translateFullyRigthX');
-  }
-  const showPanel = function() {
-    RIGHTSIDEPANELELEMENT.classList.remove('translateFullyRigthX');
-  }
 
-  const setSelectedId = function(id: number) {
-    hidePanel();
-    if (id != selectedId && id > 0) {
-      selectedId = id;
-      updateRightSidePropsSync();
-      showPanel();
-      //updateRightSidePropertiesPanel();
-    }
+  return {
+    updateRightSidePropsSync
   }
-
-  const getSelectedId = function() {
-    return selectedId;
-  }
-
-  const setItemPropertiesArray = function(x) {
-    itemsProperties = x;
-  }
-
-  return (() => {
-    return {
-      setSelectedId,
-      updateRightSidePropertiesPanel,
-      getSelectedId,
-      setItemPropertiesArray,
-    }
-  })
 }

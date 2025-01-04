@@ -18,7 +18,6 @@ export interface parsedGeometryData {
 
 
 onmessage = (x) => {
-  console.log("got it")
   if (x.data.msg == 'parseFile') {
     parseIfcFile(x.data.file)
   }
@@ -26,17 +25,17 @@ onmessage = (x) => {
 
 
 const parseIfcFile = async function(FILE: Uint8Array) {
-  //Had to move the ifcAPI Init here as the worker body wouldnt await by itself the ifcAPI.init() it has to be somewhere we call initially once ideally
   const ifcAPI = new IfcAPI();
   ifcAPI.SetWasmPath("../node_modules/web-ifc/");
   await ifcAPI.Init();
-  //use ifcAPI.Dispose() when done here
 
-  let parsedIfcObj: parsedIfcObject = { geometries: [], vertSize: 0, indSize: 0 };
   const start = ms();
   const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: true });
   const time = ms() - start;
   let lookUpId = 0;
+  const instanceMap = new Map();
+  const instanceExpressIds: number[] = [];
+
   console.log(`Opening model took ${time} ms`);
 
   if (ifcAPI.GetModelSchema(modelID) == 'IFC2X3' ||
@@ -46,9 +45,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
-      //mesh.geometries isnt iterable and handles pointers to wasm
-      //Literally check if this is not optimal as we probably can do all in 1 same iteration and thats
-      //just more performant sorry functional bros
       for (let i = 0; i < numGeoms; i++) {
         lookUpId++;
         let placedGeom = mesh.geometries.get(i);
@@ -59,60 +55,68 @@ const parseIfcFile = async function(FILE: Uint8Array) {
         });
       }
 
-      processedGeoms.reduce((_acc: parsedIfcObject, _curr) => {
+      processedGeoms.forEach((processedGeometry) => {
         const vertexArray = ifcAPI.GetVertexArray(
-          _curr.geometry.GetVertexData(),
-          _curr.geometry.GetVertexDataSize()
+          processedGeometry.geometry.GetVertexData(),
+          processedGeometry.geometry.GetVertexDataSize()
         );
         const indexArray = ifcAPI.GetIndexArray(
-          _curr.geometry.GetIndexData(),
-          _curr.geometry.GetIndexDataSize()
+          processedGeometry.geometry.GetIndexData(),
+          processedGeometry.geometry.GetIndexDataSize()
         )
-        _acc.geometries.push({
+
+        let geometryKey = (vertexArray.byteLength * 31 + vertexArray[0] * 37 + vertexArray[vertexArray.length - 1] * 41) | 0;
+
+        if (!instanceMap.has(geometryKey)) {
+          instanceMap.set(geometryKey, {
+            baseGeometry: {
+              vertexArray,
+              indexArray
+            },
+            instances: []
+          })
+        }
+
+        instanceMap.get(geometryKey).instances.push({
           meshExpressId: mesh.expressID,
           lookUpId: lookUpId,
-          color: _curr.color,
-          flatTransform: _curr.flatTransform,
-          vertexArray,
-          indexArray
-        })
-        _acc.vertSize += vertexArray.byteLength;
-        _acc.indSize += indexArray.byteLength;
-        return _acc;
-      }, parsedIfcObj);
+          color: processedGeometry.color,
+          flatTransform: processedGeometry.flatTransform,
+        });
+        instanceExpressIds.push(mesh.expressID);
+      })
 
       //still not working
       //mesh.delete()
     });
 
-    postMessage({ msg: 'geometryReady', parsedIfcObj });
+    postMessage({ msg: 'geometryReady', instanceMap });
 
     const CHUNK_SIZE = 50;
     const itemProperties = [];
 
-    //Revisit the setup here because with lookupId instead of meshExpressID goes better so maybe now promises can be waited better than now
-    for (let i = 0; i < parsedIfcObj.geometries.length; i += CHUNK_SIZE) {
-      const chunk = parsedIfcObj.geometries.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
+      const chunk = instanceExpressIds.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
         chunk.map(async curr => {
-          const [propertySet, itemProperties] = await Promise.all([
-            ifcAPI.properties.getPropertySets(modelID, curr.meshExpressId, true),
-            ifcAPI.properties.getItemProperties(modelID, curr.meshExpressId, true)
+          //Goes faster with recursive false, but with recursive true or a big model/slow device the async worker aproach shines much more
+          const [itemProperties] = await Promise.all([
+            //ifcAPI.properties.getPropertySets(modelID, curr.meshExpressId, true),
+            ifcAPI.properties.getItemProperties(modelID, curr, false)
           ]);
-          return { propertySet, itemProperties };
+          return { itemProperties };
         })
       );
 
-
       itemProperties.push(...chunkResults);
-      console.log((i + chunk.length) / parsedIfcObj.geometries.length)
+      console.log((i + chunk.length) / instanceExpressIds.length)
     }
 
     postMessage({
       msg: 'itemPropertiesReady',
       itemProperties
     });
-
+    itemProperties;
   }
 
   ifcAPI.CloseModel(modelID);
