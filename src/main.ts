@@ -30,7 +30,6 @@ async function init() {
 
   console.log("🖌️", ms() - start);
   renderer(device, loadedModelData, actionHandler);
-  console.log(loadedModelData);
 
   const loadedItems = await parseIfcFileWithWorkerHandle.getDataAttributes;
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(loadedItems);
