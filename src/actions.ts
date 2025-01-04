@@ -37,11 +37,10 @@ export function createActionsHandler() {
 
   const updateSelectedId = function(id: number) {
     document.getElementById('rightSidePropertiesPanel')!.classList.add('translateFullyRigthX');
-    if (id != selectedId && id > 0) {
+    if (id != selectedId && id > -1) {
       selectedId = id;
       document.getElementById('rightSidePropertiesPanel')!.classList.remove('translateFullyRigthX');
       events.emit(selectedId);
-      console.log(selectedId)
     }
   };
 
