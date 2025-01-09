@@ -8,7 +8,7 @@ import { OrbitCamera } from './deps/camera.ts';
 import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 
-export function renderer(device: GPUDevice, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any) {
+export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -16,8 +16,9 @@ export function renderer(device: GPUDevice, loadedModel: Map<number, { baseGeome
   const VEC2_SIZE = 4 * 2;
 
   //Getting the context stuff here for now, not sure where it will go
-  const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
   const context = canvas.getContext('webgpu')!;
+  let canvasW = canvas.width;
+  let canvasH = canvas.height;
 
   //Camera 
   const cameraSettings = {
@@ -117,23 +118,23 @@ export function renderer(device: GPUDevice, loadedModel: Map<number, { baseGeome
 
   //G Buffer textures
   const positionTexture = device.createTexture({
-    size: { width: 800, height: 600 },
+    size: { width: canvasW, height: canvasH },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'rgba16float',
   });
 
   const albedoTexture = device.createTexture({
-    size: { width: 800, height: 600 },
+    size: { width: canvasW, height: canvasH },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'rgba8unorm',
   });
   const normalTexture = device.createTexture({
-    size: { width: 800, height: 600 },
+    size: { width: canvasW, height: canvasH },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'rgba16float',
   });
   const idTexture = device.createTexture({
-    size: { width: 800, height: 600 },
+    size: { width: canvasW, height: canvasH },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'r32uint'
   })
@@ -461,7 +462,7 @@ export function renderer(device: GPUDevice, loadedModel: Map<number, { baseGeome
   let instanceI = 0;
   let instanceGroupI = 0;
   let firstInstanceOffset = 0;
-  const proMat = getProjectionMatrix(800, 600);
+  const proMat = getProjectionMatrix(canvasW, canvasH);
   let vertexDataArray = new Float32Array(verCountLd / 4);
   const commandArray = new Uint32Array(loadedModel.size * 5);
   let indexDataArray = new Uint32Array(indCountLd / 4);

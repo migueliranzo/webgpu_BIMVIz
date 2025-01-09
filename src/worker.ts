@@ -65,7 +65,13 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           processedGeometry.geometry.GetIndexDataSize()
         )
 
-        let geometryKey = (vertexArray.byteLength * 31 + vertexArray[0] * 37 + vertexArray[vertexArray.length - 1] * 41) | 0;
+        let geometryKey = 0;
+        const stride = Math.max(1, Math.floor(vertexArray.length / 8)); // Take up to 8 samples
+        for (let i = 0; i < vertexArray.length; i += stride) {
+          geometryKey ^= (vertexArray[i] * 0x517cc1b7) >>> 0; // Prime multiplier
+          geometryKey = (geometryKey << 13) | (geometryKey >>> 19); // Rotate bits
+        }
+        geometryKey ^= (vertexArray.length * 0x27d4eb2d) >>> 0;
 
         if (!instanceMap.has(geometryKey)) {
           instanceMap.set(geometryKey, {
@@ -90,6 +96,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       //mesh.delete()
     });
 
+    console.log(instanceMap)
     postMessage({ msg: 'geometryReady', instanceMap });
 
     const CHUNK_SIZE = 50;
@@ -111,12 +118,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       itemProperties.push(...chunkResults);
       console.log((i + chunk.length) / instanceExpressIds.length)
     }
-
-    postMessage({
-      msg: 'itemPropertiesReady',
-      itemProperties
-    });
-    itemProperties;
+    console.log(itemProperties);
+    postMessage({ msg: 'itemPropertiesReady', itemProperties });
   }
 
   ifcAPI.CloseModel(modelID);

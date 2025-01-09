@@ -4,6 +4,12 @@ function createLocalEventEmitter() {
   // Using a DOM Event Target gives us a built-in event system
   const eventTarget = new EventTarget();
 
+  addEventListener("resize", (event) => {
+    const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
+    canvas.width = document.body.clientWidth;
+    canvas.height = document.body.clientHeight;
+  });
+
   return {
     emit(value) {
       // Create a new event with our value

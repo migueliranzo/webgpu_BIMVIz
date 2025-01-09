@@ -21,6 +21,7 @@ export function createDataViewModel() {
     RIGHTSIDEPANELELEMENT.appendChild(htmlList)
   }
 
+  //TODO: could use some work probably
   function mapPropertiesToHtml(list: any, htmlist: HTMLDivElement) {
     RIGHTSIDEPANELELEMENT.childNodes[0]?.remove()
     for (const value in list) {
@@ -31,7 +32,7 @@ export function createDataViewModel() {
       propertyTitle.classList.add('property-title')
       propertyValue.classList.add('property-value')
       propertyTitle.innerText = value;
-      if (typeof list[value] === 'object') {
+      if (typeof list[value] === 'object' && list[value]) {
         propertyValue.innerText = list[value].value ? list[value].value : list[value].expressID;
       } else {
         propertyValue.innerText = list[value];

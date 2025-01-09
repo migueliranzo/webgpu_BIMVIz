@@ -16,8 +16,13 @@ async function init() {
   }
 
   const device = await adapter.requestDevice();
+  const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
+  canvas.width = document.body.clientWidth;
+  canvas.height = document.body.clientHeight;
 
-  const fileBuffer = await fetch('/20220421MODEL REV01.ifc').then((fileResponse) => fileResponse.arrayBuffer());
+  //Ifc2x3_Duplex_MEP
+  //20220421MODEL REV01
+  const fileBuffer = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Eng-HVAC.ifc').then((fileResponse) => fileResponse.arrayBuffer());
   let fileUint8Buffer = new Uint8Array(fileBuffer);
   const start = ms();
   const ifcModelHandler = createIfcModelHandler(fileUint8Buffer);
@@ -29,7 +34,7 @@ async function init() {
   const actionHandler = createActionsHandler();
 
   console.log("🖌️", ms() - start);
-  renderer(device, loadedModelData, actionHandler);
+  renderer(device, canvas, loadedModelData, actionHandler);
 
   const loadedItems = await parseIfcFileWithWorkerHandle.getDataAttributes;
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(loadedItems);
