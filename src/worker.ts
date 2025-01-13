@@ -54,8 +54,9 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
+      lookUpId++;
+      instanceExpressIds.push(mesh.expressID);
       for (let i = 0; i < numGeoms; i++) {
-        lookUpId++;
         let placedGeom = mesh.geometries.get(i);
         processedGeoms.push({
           color: placedGeom.color,
@@ -74,13 +75,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           processedGeometry.geometry.GetIndexDataSize()
         )
 
-        let geometryKey = 0;
-        const stride = Math.max(1, Math.floor(vertexArray.length / 8)); // Take up to 8 samples
-        for (let i = 0; i < vertexArray.length; i += stride) {
-          geometryKey ^= (vertexArray[i] * 0x517cc1b7) >>> 0; // Prime multiplier
-          geometryKey = (geometryKey << 13) | (geometryKey >>> 19); // Rotate bits
-        }
-        geometryKey ^= (vertexArray.length * 0x27d4eb2d) >>> 0;
+        const geometryKey = generateGeometryHash(vertexArray);
 
         if (!instanceMap.has(geometryKey)) {
           instanceMap.set(geometryKey, {
@@ -98,9 +93,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           color: processedGeometry.color,
           flatTransform: processedGeometry.flatTransform,
         });
-        instanceExpressIds.push(mesh.expressID);
       })
-
       //still not working
       //mesh.delete()
     });
@@ -110,7 +103,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
 
     const CHUNK_SIZE = 50;
     const itemProperties = [];
-
     for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
       const chunk = instanceExpressIds.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
@@ -134,6 +126,17 @@ const parseIfcFile = async function(FILE: Uint8Array) {
 
     let typesList = ifcAPI.GetAllTypesOfModel(modelID);
 
+    const pipeGroups = getWaterPipesGroups();
+
+    const generalProperties = { typesList, grouping: pipeGroups };
+    postMessage({ msg: 'generalPropertiesReady', generalProperties });
+
+  }
+
+  ifcAPI.CloseModel(modelID);
+
+  //Grouping functions
+  function getWaterPipesGroups() {
     const connectsPortToElementObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTTOELEMENT);
     const connectsPortsObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTS);
 
@@ -206,10 +209,29 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     // Now grouping maps each flow segment to its group ID
     console.log(grouping);
 
-    const generalProperties = { typesList, grouping };
-    postMessage({ msg: 'generalPropertiesReady', generalProperties });
+    return grouping;
+  }
+}
 
+function generateGeometryHash(vertexArray: number[]) {
+  //We try to align our aproach to cache by blocks to make it cheaper for the CPU while mantaining uniqueness 
+  const BLOCK_SIZE = 32;
+  let hash = 0;
+
+  for (let blockStart = 0; blockStart < vertexArray.length - BLOCK_SIZE; blockStart += BLOCK_SIZE) {
+    let blockHash = 0;
+    //The idea is to sequentially process the data by blocks to make it cpu-predictable
+    for (let i = 0; i < BLOCK_SIZE; i++) {
+      blockHash = (blockHash + vertexArray[blockStart + i] * 31) >>> 0;
+    }
+    hash = (hash * 37 + blockHash) >>> 0;
   }
 
-  ifcAPI.CloseModel(modelID);
+  //if array length is not divisible by BLOCK_SIZE we get the remaining vertex values
+  const remainingStart = Math.floor(vertexArray.length / BLOCK_SIZE) * BLOCK_SIZE;
+  for (let i = remainingStart; i < vertexArray.length; i++) {
+    hash = (hash * 31 + vertexArray[i]) >>> 0;
+  }
+
+  return hash;
 }
