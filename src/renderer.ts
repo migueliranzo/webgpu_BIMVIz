@@ -8,7 +8,7 @@ import { OrbitCamera } from './deps/camera.ts';
 import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 
-export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any) {
+export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, electricPipesIDs) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -483,10 +483,11 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     firstInstanceOffset += instanceGroup.instances.length;
 
     instanceGroup.instances.forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
-      console.log(instance.groupId)
       let currOffset = ((ALIGNED_SIZE / 2) / 4) * instanceI;
       instanceDataArray.set(instance.flatTransform, currOffset);
-      instanceDataArray.set(colorGroupTest[instance.groupId] ? colorGroupTest[instance.groupId] : [0., 0., 0.], currOffset + 16);
+      //instanceDataArray.set(colorGroupTest[instance.pipeGroupId] ? colorGroupTest[instance.pipeGroupId] : [0., 0., 0.], currOffset + 16);
+      //instanceDataArray.set([instance.color.x, instance.color.y, instance.color.z], currOffset + 16);
+      instanceDataArray.set(electricPipesIDs.includes(instance.meshExpressId) ? colorGroupTest[0] : colorGroupTest[1], currOffset + 16)
       instanceDataArray.set([instance.lookUpId], currOffset + 16 + 3);
       instanceI++;
     })
@@ -498,7 +499,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     instanceGroupI++;
     testI += 5;
   })
-
   //Static buffers write
   device.queue.writeBuffer(gBufferInstanceOffsetBuffer, 0, instanceUniformOffsetDataArray)
   device.queue.writeBuffer(gBufferInstnaceConstantsBuffer, 0, instanceDataArray)

@@ -1,4 +1,4 @@
-import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS } from 'web-ifc';
+import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS, IFCCABLESEGMENTTYPE, IFCRELDEFINESBYTYPE } from 'web-ifc';
 
 export interface parsedIfcObject {
   geometries: parsedGeometryData[],
@@ -101,6 +101,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     console.log(instanceMap)
     postMessage({ msg: 'geometryReady', instanceMap });
 
+    //Construct itemProperties array by chunks
     const CHUNK_SIZE = 50;
     const itemProperties = [];
     for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
@@ -124,11 +125,16 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     console.log(itemProperties);
     postMessage({ msg: 'itemPropertiesReady', itemProperties });
 
-    let typesList = ifcAPI.GetAllTypesOfModel(modelID);
-
     const pipeGroups = getWaterPipesGroups();
+    const electricPipesIDs = getElectricPipesIds();
 
-    const generalProperties = { typesList, grouping: pipeGroups };
+    let typesList = ifcAPI.GetAllTypesOfModel(modelID);
+    console.log(typesList)
+
+    //Get to work on the electrical side of things, now the model renders properly
+
+    const generalProperties = { typesList, pipeGroups, electricPipesIDs };
+
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
 
   }
@@ -211,9 +217,31 @@ const parseIfcFile = async function(FILE: Uint8Array) {
 
     return grouping;
   }
+
+  function getElectricPipesIds() {
+    const cableSegments = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
+    const typeDefinitionsRelations = ifcAPI.GetLineIDsWithType(modelID, IFCRELDEFINESBYTYPE);
+    const cableSegmentsArrayIds = [];
+
+    for (let cable of cableSegments) {
+      let cableObject = ifcAPI.GetLine(modelID, cable);
+      cableSegmentsArrayIds.push(cableObject.expressID)
+    }
+    const electricPipesIDs = [];
+    for (let typeRef of typeDefinitionsRelations) {
+      let typeRefObject = ifcAPI.GetLine(modelID, typeRef);
+      if (cableSegmentsArrayIds.includes(typeRefObject.RelatingType.value)) {
+        typeRefObject.RelatedObjects.forEach((object) => {
+          electricPipesIDs.push(ifcAPI.GetLine(modelID, object.value).expressID)
+        })
+      }
+    }
+    console.log(electricPipesIDs)
+    return electricPipesIDs;
+  }
 }
 
-function generateGeometryHash(vertexArray: number[]) {
+function generateGeometryHash(vertexArray: Float32Array) {
   //We try to align our aproach to cache by blocks to make it cheaper for the CPU while mantaining uniqueness 
   const BLOCK_SIZE = 32;
   let hash = 0;

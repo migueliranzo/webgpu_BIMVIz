@@ -23,7 +23,8 @@ async function init() {
   //20220421MODEL REV01
   //Water and plumbing -> NBU_Duplex-Apt_Eng-HVAC.ifc
   //Heating and electricity -> NBU_Duplex-Apt_Eng-MEP.ifc
-  const fileBuffer = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Eng-HVAC.ifc').then((fileResponse) => fileResponse.arrayBuffer());
+  //Arquitecture -> NBU_Duplex-Apt_Arch.ifc
+  const fileBuffer = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Eng-MEP.ifc').then((fileResponse) => fileResponse.arrayBuffer());
   let fileUint8Buffer = new Uint8Array(fileBuffer);
   const start = ms();
   const ifcModelHandler = createIfcModelHandler(fileUint8Buffer);
@@ -34,7 +35,7 @@ async function init() {
   const generalProperties = await parseIfcFileWithWorkerHandle.getGeneralProperties;
   let transformedLoadModel = new Map<any, any>;
   loadedModelData.forEach((value, key) => {
-    let y = value.instances.map((instance) => instance = { ...instance, groupId: generalProperties.grouping.get(instance.meshExpressId) })
+    let y = value.instances.map((instance) => instance = { ...instance, pipeGroupId: generalProperties.pipeGroups.get(instance.meshExpressId) })
     transformedLoadModel.set(key, { baseGeometry: value.baseGeometry, instances: y })
   })
 
@@ -44,7 +45,7 @@ async function init() {
   const actionHandler = createActionsHandler();
 
   console.log("🖌️", ms() - start);
-  renderer(device, canvas, transformedLoadModel, actionHandler);
+  renderer(device, canvas, transformedLoadModel, actionHandler, generalProperties.electricPipesIDs);
 
   const loadedItems = await parseIfcFileWithWorkerHandle.getDataAttributes;
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(loadedItems);

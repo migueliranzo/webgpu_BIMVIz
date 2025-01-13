@@ -1,3 +1,4 @@
+//Different by instance same each pass
 struct Uniforms {
   modelMatrix: mat4x4f,
   color: vec3f,
@@ -5,6 +6,7 @@ struct Uniforms {
   padding: mat3x3f
 }
 
+//Same by instance different each pass
 struct ConstantUnifroms {
   viewMatrix: mat4x4f, 
   projectionMatrix: mat4x4f, 

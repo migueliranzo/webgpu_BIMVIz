@@ -9,7 +9,7 @@ export function createItemspropertyarrayhandle(items) {
   }
 }
 
-export function createDataViewModel(generalProperties: { typesList: [], grouping: Map<any, any> }) {
+export function createDataViewModel(generalProperties: { typesList: [], pipeGroups: Map<any, any> }) {
   const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
 
   const updateRightSidePropsSync = function(propertyList) {
