@@ -32,6 +32,10 @@ fn vertex_main(@location(0) position: vec3f, @location(1) normal: vec3f, @builti
     output.worldPos = (instanceUniforms.modelMatrix * vec4f(position, 1.0)).xyz;
     output.normal = normalize(instanceUniforms.modelMatrix * vec4(normal, 0.0)).xyz;
     output.albedo = vec4(instanceUniforms.color, 1.0);
+  //TODO: This is wrong so change it whenever, we just want a way to test for whites and make them gray
+    if length(instanceUniforms.color) > 0.98 {
+        output.albedo = vec4(0.9, 0.9, 0.9, 1.0);
+    }
     output.id = instanceUniforms.id;
 
     return output;

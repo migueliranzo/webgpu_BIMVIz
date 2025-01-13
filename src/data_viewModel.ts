@@ -9,7 +9,7 @@ export function createItemspropertyarrayhandle(items) {
   }
 }
 
-export function createDataViewModel() {
+export function createDataViewModel(generalProperties: { typesList: [], grouping: Map<any, any> }) {
   const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
 
   const updateRightSidePropsSync = function(propertyList) {
@@ -37,6 +37,11 @@ export function createDataViewModel() {
       } else {
         propertyValue.innerText = list[value];
       }
+
+      if (value == 'type') {
+        propertyValue.innerText = generalProperties.typesList.find((type) => type.typeID == list[value]).typeName;
+      }
+
       propertyRow.appendChild(propertyTitle);
       propertyRow.appendChild(propertyValue);
       htmlist.appendChild(propertyRow);

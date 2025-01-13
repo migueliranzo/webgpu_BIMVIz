@@ -453,7 +453,9 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     },
   };
 
-  //TODO: Cleanup and/or encapsulation
+  let colorGroupTest = [[0.2, 0.67, 0.], [0.6, 0.3, 0.6], [0., 0.1, 0.6], [0.4, 0.8, 0.2], [0.9, 0., 0.], [0., 0.39, 0.2], [0.1, 0.1, 0.1], [0.9, 0.8, 0.8], [0.2, 0.2, 0.8]]
+
+  //TODO: Cleanup and/or encapsulation, and couldnt we do this in a worker? since we write everythig into arrays we then write to buffers
   let _offsetGeo = 0;
   let _offsetIndex = 0;
   let _offsetIndexBytes = 0;
@@ -481,9 +483,10 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     firstInstanceOffset += instanceGroup.instances.length;
 
     instanceGroup.instances.forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
+      console.log(instance.groupId)
       let currOffset = ((ALIGNED_SIZE / 2) / 4) * instanceI;
       instanceDataArray.set(instance.flatTransform, currOffset);
-      instanceDataArray.set([instance.color.x, instance.color.y, instance.color.z], currOffset + 16);
+      instanceDataArray.set(colorGroupTest[instance.groupId] ? colorGroupTest[instance.groupId] : [0., 0., 0.], currOffset + 16);
       instanceDataArray.set([instance.lookUpId], currOffset + 16 + 3);
       instanceI++;
     })
