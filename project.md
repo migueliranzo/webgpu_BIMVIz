@@ -38,3 +38,12 @@ actually do something better than already existing software. Just leaving this h
 
 -High value per time spent (like understanding BIM format): Do it manually
 -Low value per time spent (like reimplementing standard UI patterns): Use existing solutions
+
+### Notes in case I forget about issues:
+# LookUp id issue/item property list issue
+        //TODO: revisit the lookUpId asignation and how it relates with its mesh and instance independence - update ->
+        //update -> we were saving data on a instance basis instead of a mesh basis, the instance doesnt have item property data in the sense that a mesh created by 5 geometries
+        //will have the same itemProperties because they share the same mesh.expressId so it doesnt make sense to save itemProperty value for each instnace but to save that on
+        //a per mesh basis (as we do know) -> so now instances save their lookUp id of the mesh its owned by as well as that very same mesh.express ID
+        //we were already doing that in the render side of things, we were just creating a item property list way bigger than needed and with dead information, since we were fecthing by mesh lookup id into a list with instnace lookup id, but now the list is the proper size and it works as expected :D
+

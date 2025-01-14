@@ -15,6 +15,7 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
     myWorker.postMessage({ msg: 'parseFile', file: FILE });
     let geoResolve;
     let itemPropertiesResolve;
+    let generalPropertiesResolve;
 
     const geoPromise = new Promise(resolve => {
       geoResolve = resolve;
@@ -24,18 +25,25 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
       itemPropertiesResolve = resolve;
     })
 
+    const generalPropertiesPromise = new Promise(resolve => {
+      generalPropertiesResolve = resolve;
+    })
 
     myWorker.onmessage = (x) => {
       switch (x.data.msg) {
 
         case 'geometryReady': {
-          geoResolve(x.data.instanceMap);
+          geoResolve({ loadedModelData: x.data.instanceMap, meshCount: x.data.meshCount });
+          break;
+        }
+        case 'generalPropertiesReady': {
+          generalPropertiesResolve(x.data.generalProperties)
           break;
         }
         case 'itemPropertiesReady': {
-          itemPropertiesResolve(x.data.itemProperties)
-          myWorker.terminate();
-          myWorker.onmessage = null;
+          itemPropertiesResolve(x.data.itemPropertiesMap)
+          //myWorker.terminate(); TODO: uncomment when testing stops
+          //myWorker.onmessage = null;TODO: uncomment when testing stops
           break;
         }
       }
@@ -44,7 +52,8 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
 
     return {
       getGeometry: geoPromise,
-      getDataAttributes: itemPropertiesPromise
+      getDataAttributes: itemPropertiesPromise,
+      getGeneralProperties: generalPropertiesPromise
     }
   }
 
