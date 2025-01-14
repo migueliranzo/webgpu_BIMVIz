@@ -1,4 +1,4 @@
-import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS, IFCCABLESEGMENTTYPE, IFCRELDEFINESBYTYPE } from 'web-ifc';
+import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS, IFCCABLESEGMENTTYPE, IFCRELDEFINESBYTYPE, IFCPIPESEGMENTTYPE, IFCPIPEFITTINGTYPE, IFCDUCTSEGMENT, IFCDUCTSEGMENTTYPE } from 'web-ifc';
 
 export interface parsedIfcObject {
   geometries: parsedGeometryData[],
@@ -34,6 +34,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
   const time = ms() - start;
   let lookUpId = 0;
   const instanceMap = new Map();
+  const meshIdInstancesIdMap = new Map();
   const instanceExpressIds: number[] = [];
 
   console.log(`Opening model took ${time} ms`);
@@ -42,20 +43,13 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     ifcAPI.GetModelSchema(modelID) == 'IFC4' ||
     ifcAPI.GetModelSchema(modelID) == 'IFC4X3_RC4') {
 
-    let test = ifcAPI.GetLineIDsWithType(modelID, 987401354) //get all lines with type ifcFlowSegment 
-    let pipe = ifcAPI.GetLine(modelID, test.get(29))
-    console.log(test.get(29))
-    console.log(pipe)
-
-    let port = ifcAPI.GetLine(modelID, 986652);
-    let port1 = ifcAPI.GetLine(modelID, 986651);
-    console.log(port, port1)
-
     ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
       lookUpId++;
       instanceExpressIds.push(mesh.expressID);
+      //meshIdInstancesIdMap.set(lookUpId, { expressId: mesh.expressID })
+
       for (let i = 0; i < numGeoms; i++) {
         let placedGeom = mesh.geometries.get(i);
         processedGeoms.push({
@@ -99,44 +93,105 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     });
 
     console.log(instanceMap)
-    postMessage({ msg: 'geometryReady', instanceMap });
+    postMessage({ msg: 'geometryReady', instanceMap, meshCount: instanceExpressIds.length });
+
 
     //Construct itemProperties array by chunks
     const CHUNK_SIZE = 50;
-    const itemProperties = [];
+    const itemPropertiesMap = new Map();
     for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
       const chunk = instanceExpressIds.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
-        chunk.map(async curr => {
-          //Goes faster with recursive false, but with recursive true or a big model/slow device the async worker aproach shines much more
-          const [itemProperties] = await Promise.all([
-            //ifcAPI.properties.getPropertySets(modelID, curr.meshExpressId, true),
-            ifcAPI.properties.getItemProperties(modelID, curr, false),
-          ]);
-          return { itemProperties };
+        chunk.map(async expressId => {
+          const itemProperties = await ifcAPI.properties.getItemProperties(modelID, expressId, false);
+          return [expressId, itemProperties];
         })
       );
 
-      itemProperties.push(...chunkResults);
-      console.log((i + chunk.length) / instanceExpressIds.length)
+      chunkResults.forEach(([expressId, properties]) => {
+        itemPropertiesMap.set(expressId, properties);
+      });
+
+      console.log((i + chunk.length) / instanceExpressIds.length);
     }
 
-
-    console.log(itemProperties);
-    postMessage({ msg: 'itemPropertiesReady', itemProperties });
+    console.log(itemPropertiesMap);
+    postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap });
 
     const pipeGroups = getWaterPipesGroups();
-    const electricPipesIDs = getElectricPipesIds();
 
     let typesList = ifcAPI.GetAllTypesOfModel(modelID);
     console.log(typesList)
 
-    //Get to work on the electrical side of things, now the model renders properly
+    //Pipe grouping
+    const cableSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
+    const pipeSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPESEGMENTTYPE)
+    const pipeFittingTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPEFITTINGTYPE)
+    const defineByTypeLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCRELDEFINESBYTYPE);
+    const pipeSegmentsLineObjects = [];
+    const electricalSegmentsLineObjects = [];
+    const meshTypeIdMap = new Map();
+    const typesIdStateMap = new Map();
 
-    const generalProperties = { typesList, pipeGroups, electricPipesIDs };
+    for (let pipeSegmentTypeLineId of pipeSegmentsTypesLineIds) {
+      let pipeSegmentTypeLineObject = ifcAPI.GetLine(modelID, pipeSegmentTypeLineId);
+      pipeSegmentsLineObjects.push(pipeSegmentTypeLineObject.expressID)
+    }
+
+    //Pipe fittings going into the same as pipes for now -> Update: Hard to color them if we go by revit string...
+    for (let pipeFittingTypesLineId of pipeFittingTypesLineIds) {
+      let pipeSegmentTypeLineObject = ifcAPI.GetLine(modelID, pipeFittingTypesLineId);
+      pipeSegmentsLineObjects.push(pipeSegmentTypeLineObject.expressID)
+    }
+
+    for (let cableSegmentTypeLineId of cableSegmentsTypesLineIds) {
+      let cableObject = ifcAPI.GetLine(modelID, cableSegmentTypeLineId);
+      electricalSegmentsLineObjects.push(cableObject.expressID)
+    }
+
+    //const revitTypes = new Map();
+    //revitTypes.set("Electrical", { objects: [] })
+    const revitTypesInversed = new Map();
+    const pipeTypeColor = [[.9, .9, 0.], [.9, 0, 0], [0.5, 0.5, 0.5], [0.5, 0.5, 0.2], [0., 0., .9], [.9, 0., .9], [0.3, 1.0, 0.1]]
+
+    for (let defineByTypeLineId of defineByTypeLineIds) {
+      let defineByTypeLineObject = ifcAPI.GetLine(modelID, defineByTypeLineId);
+      let relatingTypeId = defineByTypeLineObject.RelatingType.value;
+      if (electricalSegmentsLineObjects.includes(relatingTypeId)) {
+        for (let object of defineByTypeLineObject.RelatedObjects) {
+          let pipeObject = ifcAPI.GetLine(modelID, object.value);
+          revitTypesInversed.set(pipeObject.expressID, 'Electrical');
+          meshTypeIdMap.set(pipeObject.expressID, 'Electrical');
+          if (!typesIdStateMap.has('Electrical')) {
+            typesIdStateMap.set('Electrical', { typeId: typesIdStateMap.size, stringType: 'Electrical', state: 0, color: pipeTypeColor[typesIdStateMap.size] })
+          }
+        }
+      }
+
+      if (pipeSegmentsLineObjects.includes(relatingTypeId)) {
+        for (let object of defineByTypeLineObject.RelatedObjects) {
+          let pipeObject = ifcAPI.GetLine(modelID, object.value);
+          let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, object.value);
+          let itemPropertiesSet = pipeObjectPropertySets.find((propertySet) => propertySet.Name.value == 'PSet_Revit_Mechanical');
+          itemPropertiesSet.HasProperties.forEach((x) => {
+            let revitVal = ifcAPI.GetLine(modelID, x.value);
+            if (revitVal.Name.value == 'System Type') {
+              revitTypesInversed.set(pipeObject.expressID, revitVal.NominalValue.value);
+              meshTypeIdMap.set(pipeObject.expressID, revitVal.NominalValue.value);
+              if (!typesIdStateMap.has(revitVal.NominalValue.value)) {
+                typesIdStateMap.set(revitVal.NominalValue.value, { typeId: typesIdStateMap.size, stringType: revitVal.NominalValue.value, state: 0, color: pipeTypeColor[typesIdStateMap.size] })
+              }
+              return
+            }
+          })
+        }
+      }
+    }
+
+    //Just adding everything here for now, surely it wont become a problem later
+    const generalProperties = { typesList, pipeGroups, revitTypesInversed, instanceExpressIds, meshTypeIdMap, typesIdStateMap };
 
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
-
   }
 
   ifcAPI.CloseModel(modelID);
@@ -147,13 +202,12 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     const connectsPortsObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTS);
 
     const portToFlowSegment = new Map();
-    // Fill it from IFCRELCONNECTSPORTTOELEMENT
     for (let test of connectsPortToElementObjects) {
       let rel = ifcAPI.GetLine(modelID, test);
       portToFlowSegment.set(rel.RelatingPort.value, rel.RelatedElement.value);
-    };
+    }
 
-    // Create a map for our disjoint set
+    //Create a map for our disjoint set
     const parent = new Map();
     const rank = new Map();
 
@@ -218,27 +272,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     return grouping;
   }
 
-  function getElectricPipesIds() {
-    const cableSegments = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
-    const typeDefinitionsRelations = ifcAPI.GetLineIDsWithType(modelID, IFCRELDEFINESBYTYPE);
-    const cableSegmentsArrayIds = [];
-
-    for (let cable of cableSegments) {
-      let cableObject = ifcAPI.GetLine(modelID, cable);
-      cableSegmentsArrayIds.push(cableObject.expressID)
-    }
-    const electricPipesIDs = [];
-    for (let typeRef of typeDefinitionsRelations) {
-      let typeRefObject = ifcAPI.GetLine(modelID, typeRef);
-      if (cableSegmentsArrayIds.includes(typeRefObject.RelatingType.value)) {
-        typeRefObject.RelatedObjects.forEach((object) => {
-          electricPipesIDs.push(ifcAPI.GetLine(modelID, object.value).expressID)
-        })
-      }
-    }
-    console.log(electricPipesIDs)
-    return electricPipesIDs;
-  }
 }
 
 function generateGeometryHash(vertexArray: Float32Array) {

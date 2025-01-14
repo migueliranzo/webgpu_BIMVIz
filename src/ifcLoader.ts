@@ -33,7 +33,7 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
       switch (x.data.msg) {
 
         case 'geometryReady': {
-          geoResolve(x.data.instanceMap);
+          geoResolve({ loadedModelData: x.data.instanceMap, meshCount: x.data.meshCount });
           break;
         }
         case 'generalPropertiesReady': {
@@ -41,7 +41,7 @@ export function createIfcModelHandler(inputFile: Uint8Array) {
           break;
         }
         case 'itemPropertiesReady': {
-          itemPropertiesResolve(x.data.itemProperties)
+          itemPropertiesResolve(x.data.itemPropertiesMap)
           //myWorker.terminate(); TODO: uncomment when testing stops
           //myWorker.onmessage = null;TODO: uncomment when testing stops
           break;

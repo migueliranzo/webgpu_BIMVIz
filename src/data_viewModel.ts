@@ -1,10 +1,10 @@
 import { INTEGER } from "web-ifc";
 
-export function createItemspropertyarrayhandle(items) {
+export function createItemspropertyarrayhandle(items: Map<any, any>) {
 
   return {
     getItemProperties(id) {
-      return { ...items[id] };
+      return { ...items.get(id) };
     },
   }
 }
@@ -13,10 +13,8 @@ export function createDataViewModel(generalProperties: { typesList: [], pipeGrou
   const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
 
   const updateRightSidePropsSync = function(propertyList) {
-    let itemsProperties = propertyList.itemProperties;
-    const itemPropertiesObject = itemsProperties;
     const htmlList = document.createElement('div');
-    mapPropertiesToHtml(itemPropertiesObject, htmlList);
+    mapPropertiesToHtml(propertyList, htmlList);
     htmlList.classList.add('gap-5', 'flex', 'flex-col');
     RIGHTSIDEPANELELEMENT.appendChild(htmlList)
   }

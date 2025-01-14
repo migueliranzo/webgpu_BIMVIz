@@ -3,6 +3,7 @@ import { renderer } from './renderer.ts'
 import { IfcAPI, ms, IFCUNITASSIGNMENT } from 'web-ifc';
 import { createDataViewModel, createItemspropertyarrayhandle } from './data_viewModel.ts';
 import { createIfcModelHandler } from './ifcLoader.ts';
+import { createModelServiceHandle } from './testHandler.ts';
 
 
 async function init() {
@@ -27,31 +28,28 @@ async function init() {
   const fileBuffer = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Eng-MEP.ifc').then((fileResponse) => fileResponse.arrayBuffer());
   let fileUint8Buffer = new Uint8Array(fileBuffer);
   const start = ms();
+  console.log("🖌️", ms() - start);
   const ifcModelHandler = createIfcModelHandler(fileUint8Buffer);
   const parseIfcFileWithWorkerHandle = ifcModelHandler().parseIfcFileWithWorker();
-  const loadedModelData: Map<any, any> = await parseIfcFileWithWorkerHandle.getGeometry;
+  console.log(await parseIfcFileWithWorkerHandle.getGeometry)
+  const { loadedModelData, meshCount } = await parseIfcFileWithWorkerHandle.getGeometry;
   console.log(loadedModelData)
+  console.log(meshCount)
+
+  const actionHandler = createActionsHandler();
+  renderer(device, canvas, loadedModelData, actionHandler, meshCount);
 
   const generalProperties = await parseIfcFileWithWorkerHandle.getGeneralProperties;
-  let transformedLoadModel = new Map<any, any>;
-  loadedModelData.forEach((value, key) => {
-    let y = value.instances.map((instance) => instance = { ...instance, pipeGroupId: generalProperties.pipeGroups.get(instance.meshExpressId) })
-    transformedLoadModel.set(key, { baseGeometry: value.baseGeometry, instances: y })
-  })
-
-  console.log(transformedLoadModel);
-
+  console.log(generalProperties)
   const viewModelHandler = createDataViewModel(generalProperties);
-  const actionHandler = createActionsHandler();
-
-  console.log("🖌️", ms() - start);
-  renderer(device, canvas, transformedLoadModel, actionHandler, generalProperties.electricPipesIDs);
+  createModelServiceHandle(generalProperties);
 
   const loadedItems = await parseIfcFileWithWorkerHandle.getDataAttributes;
+  console.log(loadedItems)
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(loadedItems);
 
-  console.log(itemspropertyarrayhandle.getItemProperties(612))
-  viewModelHandler.updateRightSidePropsSync(itemspropertyarrayhandle.getItemProperties(612))
+  console.log(itemspropertyarrayhandle.getItemProperties(72375))
+  viewModelHandler.updateRightSidePropsSync(itemspropertyarrayhandle.getItemProperties(72375))
   console.log("🛝", ms() - start);
 
   actionHandler.onChange((value: number) => {
