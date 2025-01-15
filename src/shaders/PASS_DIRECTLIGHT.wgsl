@@ -27,7 +27,7 @@ fn fragment_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f3
     //    highlight = vec3f(1.0);
    // }
 
-    if selectedID[0] == f32(idTexture) {
+    if selectedID[0] == f32(idTexture) && selectedID[0] != 0 {
         highlight = vec3f(1.0);
     }
 

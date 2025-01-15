@@ -1,82 +1,59 @@
-import { IfcAPI, Color, ms, IFCUNITASSIGNMENT } from 'web-ifc';
-import { parsedIfcObject } from './worker';
+export function createFileHandler(FILE) {
+  const myWorker = new Worker(new URL("worker.ts", import.meta.url), { type: 'module' });
+  const fileSize = FILE.length;
+  myWorker.postMessage({ msg: 'parseFile', file: FILE });
 
+  let geoResolve;
+  let itemPropertiesResolve;
+  let generalPropertiesResolve;
+  let resolveCount = 0;
 
-//const ifcAPI = new IfcAPI();
-//ifcAPI.SetWasmPath("../node_modules/web-ifc/");
-//await ifcAPI.Init();
+  const geoPromise = new Promise(resolve => {
+    geoResolve = resolve;
+  })
 
-const myWorker = new Worker(new URL("worker.ts", import.meta.url), { type: 'module' });
+  const itemPropertiesPromise = new Promise(resolve => {
+    itemPropertiesResolve = resolve;
+  })
 
-export function createIfcModelHandler(inputFile: Uint8Array) {
-  let FILE = inputFile;
+  const generalPropertiesPromise = new Promise(resolve => {
+    generalPropertiesResolve = resolve;
+  })
 
-  const parseIfcFileWithWorker = function() {
-    myWorker.postMessage({ msg: 'parseFile', file: FILE });
-    let geoResolve;
-    let itemPropertiesResolve;
-    let generalPropertiesResolve;
-
-    const geoPromise = new Promise(resolve => {
-      geoResolve = resolve;
-    })
-
-    const itemPropertiesPromise = new Promise(resolve => {
-      itemPropertiesResolve = resolve;
-    })
-
-    const generalPropertiesPromise = new Promise(resolve => {
-      generalPropertiesResolve = resolve;
-    })
-
-    myWorker.onmessage = (x) => {
-      switch (x.data.msg) {
-
-        case 'geometryReady': {
-          geoResolve({ loadedModelData: x.data.instanceMap, meshCount: x.data.meshCount });
-          break;
-        }
-        case 'generalPropertiesReady': {
-          generalPropertiesResolve(x.data.generalProperties)
-          break;
-        }
-        case 'itemPropertiesReady': {
-          itemPropertiesResolve(x.data.itemPropertiesMap)
-          //myWorker.terminate(); TODO: uncomment when testing stops
-          //myWorker.onmessage = null;TODO: uncomment when testing stops
-          break;
-        }
+  myWorker.onmessage = (x) => {
+    switch (x.data.msg) {
+      case 'geometryReady': {
+        resolveCount++;
+        geoResolve({ parsedModelInstancesMap: x.data.instanceMap, parsedModelMeshCount: x.data.meshCount });
+        break;
       }
-
+      case 'generalPropertiesReady': {
+        resolveCount++;
+        generalPropertiesResolve(x.data.generalProperties)
+        break;
+      }
+      case 'itemPropertiesReady': {
+        resolveCount++;
+        itemPropertiesResolve(x.data.itemPropertiesMap)
+        break;
+      }
     }
 
-    return {
-      getGeometry: geoPromise,
-      getDataAttributes: itemPropertiesPromise,
-      getGeneralProperties: generalPropertiesPromise
+    if (resolveCount == 3) {
+      myWorker.terminate();
+      myWorker.onmessage = null;
     }
-  }
-
-
-  //TODO: since we parse basic properties a method for more advanced ones wouldnt be weird
-  const getDetailedProperties = async function(expressID: number) {
-    return;
-    const start = ms();
-    const modelID = ifcAPI.OpenModel(FILE);
-    const time = ms() - start;
-    console.log(`Opening model took ${time} ms`);
-    const props = await ifcAPI.properties.getPropertySets(modelID, expressID, true);
-    const itemProp = await ifcAPI.properties.getItemProperties(modelID, expressID, true);
-    ifcAPI.CloseModel(modelID);
-    return { props, itemProp };
   }
 
   return (() => {
     return {
-      getDetailedProperties,
-      parseIfcFileWithWorker
+      parseIfcFileWithWorker: () => ({
+        geoPromise,
+        itemPropertiesPromise,
+        generalPropertiesPromise
+      }),
+      fileSize: () => fileSize
     }
   })
-
 }
 

@@ -9,8 +9,7 @@ import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 import { createModelServiceHandle, getMeshGroupsHandler } from './testHandler.ts';
 
-export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number) {
-  console.log("render script starts")
+export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -498,9 +497,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     },
   };
 
-  let colorGroupTest = [[0.2, 0.67, 0.], [0.6, 0.3, 0.6], [0., 0.1, 0.6], [0.4, 0.8, 0.2], [0.9, 0., 0.], [0., 0.39, 0.2], [0.1, 0.1, 0.1], [0.9, 0.8, 0.8], [0.2, 0.2, 0.8]]
-
-  //TODO: Cleanup and/or encapsulation, and couldnt we do this in a worker? since we write everythig into arrays we then write to buffers
+  //TODO: Cleanup and/or encapsulation
   let _offsetGeo = 0;
   let _offsetIndex = 0;
   let _offsetIndexBytes = 0;
@@ -518,6 +515,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let instanceDataArrayUintView = new Uint32Array(instanceDataArray);
   let instanceUniformOffsetDataArray = new Float32Array((loadedModel.size * ALIGNED_SIZE) / 4);
   const meshGroupsIds = new Float32Array(loadedModel.size * MAT4_SIZE);
+  let meshLookUpIdOffsetIndex = 0;
   loadedModel.forEach((instanceGroup) => {
     commandArray[testI] = instanceGroup.baseGeometry.indexArray.length; //Index count
     commandArray[testI + 1] = instanceGroup.instances.length; //Instance count
@@ -534,8 +532,9 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       let currOffset = ((16 * 4 + 3 * 4 + 1 * 4 + 12 * 4) / 4) * instanceI;
       instanceDataArrayFloatView.set(instance.flatTransform, currOffset);
       instanceDataArrayFloatView.set([instance.color.x, instance.color.y, instance.color.z], currOffset + 16)
-      instanceDataArrayUintView.set([instance.lookUpId], currOffset + 16 + 3);
+      instanceDataArrayUintView.set([(instance.lookUpId) + meshLookUpIdOffsets[meshLookUpIdOffsetIndex]], currOffset + 16 + 3);
       instanceI++;
+      if (instance.lookUpId == meshLookUpIdOffsets[meshLookUpIdOffsetIndex + 1]) meshLookUpIdOffsetIndex += 1;
     })
 
     _offsetGeo += instanceGroup.baseGeometry.vertexArray.length / 6;
@@ -553,6 +552,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   device.queue.writeBuffer(gBufferConstantsUniform, 64, proMat);
   device.queue.writeBuffer(ifcModelVertexBuffer, 0, vertexDataArray);
   device.queue.writeBuffer(ifcModelIndexBuffer, 0, indexDataArray);
+
   console.log(instancesCountLd)
 
   let typesStatesBufferStrides = new Map<any, any>;
@@ -562,10 +562,9 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       const meshUniformsDataArray = new Uint32Array((2) * meshLookUpIdsList.length);
       for (let i = 0; i < meshLookUpIdsList.length; i++) {
         let offset = ((2 * 4) / 4) * i;
-        //TODO: The ternary operator with other/any type as fallback is probably the reason we get artifacts on groups >:)
-        let stringType = meshTypeIdMap.get(meshLookUpIdsList[i]) ? meshTypeIdMap.get(meshLookUpIdsList[i]) : 'Electrical';
+        let stringType = meshTypeIdMap.get(meshLookUpIdsList[i]) ? meshTypeIdMap.get(meshLookUpIdsList[i]) : 'noGroup';
         meshUniformsDataArray[offset] = meshLookUpIdsList[i];
-        meshUniformsDataArray[offset + 1] = typesIdStateMap.get(stringType).typeId;
+        meshUniformsDataArray[offset + 1] = typesIdStateMap.get(stringType) ? typesIdStateMap.get(stringType).typeId : 99; //??? BTW we can add the arquitecture walls and all meshses really into a group so we can , say fade them all when enabling cable view for example, I honestly dont think is worth going through the trouble of separating each wall group n stuff, at least for now
       }
 
       const typeStatesDataArray = new Float32Array(typesIdStateMap.size * 4); //uint State + vec3 color for now
@@ -582,7 +581,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, meshUniformsDataArray)
 
       //So this is how we will do the dynamic toggle of types-> works for pipeTypes for now
-      //let testType = typesStatesBufferStrides.get(2);
+      //let testType = typesStatesBufferStrides.get(1);
       //device.queue.writeBuffer(typeStatesBuffer, testType.stride + 12, new Float32Array([1]))
     })
   }
@@ -599,6 +598,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   const fpsElem = document.querySelector("#fps")!;
   let frameCount = 0;
   async function render() {
+
     frameCount++;
     const now = Date.now();
     const deltaTime = (now - lastFrameMS) / 1000;
@@ -664,7 +664,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
     const copyArrayBuffer = computeSelectedIdStagingBuffer.getMappedRange(0, VEC4_SIZE);
     const data = copyArrayBuffer.slice();
-    //console.log(new Float32Array(data)[0] - 1);
+    //console.log(new Float32Array(data));
     updateId(new Float32Array(data)[0])
     computeSelectedIdStagingBuffer.unmap();
 

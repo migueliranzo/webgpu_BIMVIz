@@ -49,7 +49,6 @@ fn vertex_main(@location(0) position: vec3f, @location(1) normal: vec3f, @builti
     output.normal = normalize(instanceUniforms.modelMatrix * vec4(normal, 0.0)).xyz;
     output.albedo = vec4(instanceUniforms.color, 1.0);
     output.id = meshData.meshId;
-    //state should prob be u32
     if instanceTypeState.state == 1. {
         output.albedo = vec4(instanceTypeState.color, 1.0);
     }
