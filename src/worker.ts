@@ -30,7 +30,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
   await ifcAPI.Init();
 
   const start = ms();
-  const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: true });
+  const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: false });
   const time = ms() - start;
   let lookUpId = 0;
   const instanceMap = new Map();
@@ -46,7 +46,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
-      lookUpId++;
       instanceExpressIds.push(mesh.expressID);
       //meshIdInstancesIdMap.set(lookUpId, { expressId: mesh.expressID })
 
@@ -90,6 +89,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       })
       //still not working
       //mesh.delete()
+      lookUpId++;
     });
 
     console.log(instanceMap)
@@ -187,10 +187,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
         }
       }
     }
-
-    //Just adding everything here for now, surely it wont become a problem later
+    //Just adding everything here for now, surely it wont become a problem later -> it did.
     const generalProperties = { typesList, pipeGroups, revitTypesInversed, instanceExpressIds, meshTypeIdMap, typesIdStateMap };
-
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
   }
 
