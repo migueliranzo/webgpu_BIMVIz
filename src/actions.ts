@@ -5,9 +5,9 @@ function createLocalEventEmitter() {
   const eventTarget = new EventTarget();
 
   addEventListener("resize", (event) => {
-    const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
-    canvas.width = document.body.clientWidth;
-    canvas.height = document.body.clientHeight;
+    //  const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement; //TODO: REMOVE WHEN TESTING STOPS
+    //    canvas.width = document.body.clientWidth;
+    //   canvas.height = document.body.clientHeight;
   });
 
   return {

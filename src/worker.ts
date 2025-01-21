@@ -194,7 +194,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
 
   ifcAPI.CloseModel(modelID);
 
-  //Grouping functions
+  //Grouping functions TODO: remove, depacrated
   function getWaterPipesGroups() {
     const connectsPortToElementObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTTOELEMENT);
     const connectsPortsObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTS);
@@ -294,3 +294,4 @@ function generateGeometryHash(vertexArray: Float32Array) {
 
   return hash;
 }
+

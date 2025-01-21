@@ -1,6 +1,9 @@
 import ifcModelShaderCode from './shaders/PASS_LOADMODEL.wgsl?raw';
 import computeForwardCode from './shaders/COMPUTE_HOVER.wgsl?raw'
 import mainPassShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw'
+import computeBoundingCode from './shaders/COMPUTE_VERTEX.wgsl?raw'
+import computeOcclusionCode from './shaders/COMPUTE_OCCLUSION.wgsl?raw'
+import computeHizMipMapsCode from './shaders/COMPUTE_HIZ_MIPMAPS.wgsl?raw'
 import { cubeVertexData, } from './geometry/cube.ts';
 import { getMVPMatrix, getProjectionMatrix, getViewMatrix, getWorldMatrix } from './math_utils.ts';
 import { createInputHandler } from './deps/input.ts';
@@ -9,7 +12,7 @@ import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
 import { createModelServiceHandle, getMeshGroupsHandler } from './testHandler.ts';
 
-export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
+export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
   const ALIGNED_SIZE = 256;
   const MAT4_SIZE = 4 * 16;
   const VEC4_SIZE = 4 * 4;
@@ -32,12 +35,25 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   const inputHandler = createInputHandler(window, canvas);
   actionHandler.createLeftActions(camera);
 
+  //Shader modules
   const ifcModelshaderModule = device.createShaderModule({
     code: ifcModelShaderCode,
   })
 
   const computeHoverShaderModule = device.createShaderModule({
     code: computeForwardCode,
+  })
+
+  const computeBoundingBoxesModule = device.createShaderModule({
+    code: computeBoundingCode,
+  })
+
+  const computeOcclusionModule = device.createShaderModule({
+    code: computeOcclusionCode,
+  })
+
+  const computeHizMipMapsModule = device.createShaderModule({
+    code: computeHizMipMapsCode,
   })
 
   const mainPassShaderModule = device.createShaderModule({
@@ -63,7 +79,13 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   //Buffer creation
   const drawIndirectCommandBuffer = device.createBuffer({
     size: (loadedModel.size * 5) * 4,
-    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    label: 'drawCommandBuffer'
+  })
+
+  const filteredDrawIndirectCommandBuffer = device.createBuffer({
+    size: (loadedModel.size * 5) * 4,
+    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     label: 'drawCommandBuffer'
   })
 
@@ -77,6 +99,17 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
+  const computeBindingBoxesOutputBuffer = device.createBuffer({
+    size: instancesCountLd * (VEC4_SIZE + VEC4_SIZE), //box.min box.max xyz(w/p)
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+  })
+
+  const viewProjectionMatrixBuffer = device.createBuffer({
+    size: MAT4_SIZE + MAT4_SIZE,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    label: 'occlisionCOmmands'
+  })
+
   const computeSelectedIdStagingBuffer = device.createBuffer({
     size: VEC4_SIZE,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
@@ -87,15 +120,16 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
+  //TODO: Is storage in vertex/index buffer even okay?
   const ifcModelVertexBuffer = device.createBuffer({
     size: verCountLd,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
     label: 'instanceVertexBuffer'
   })
 
   const ifcModelIndexBuffer = device.createBuffer({
     size: indCountLd,
-    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
     label: 'instanceIndexBuffer'
   })
 
@@ -113,7 +147,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
   const gBufferInstnaceConstantsBuffer = device.createBuffer({
     size: instancesCountLd * (ALIGNED_SIZE / 2),
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     label: 'gBufferInstnaceConstantsBuffer'
   })
 
@@ -153,12 +187,24 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   })
 
   const depthTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
+    size: { width: canvasW, height: canvasH },
     format: 'depth24plus',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   });
 
+  const [maxPowerOf2SizeW, maxPowerOf2SizeH] = [canvasW, canvasH].map((x) => Math.pow(2, Math.floor(Math.log2(x))));
+  const numMipLevels = 5 //TODO: to calculate properly
 
+  const hizMipMapsTexture = device.createTexture({
+    size: { width: maxPowerOf2SizeW, height: maxPowerOf2SizeH },
+    format: 'r32float',
+    //format: 'rgba16float',
+    dimension: '2d',
+    sampleCount: 1,
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    //mipLevelCount: Math.log2(Math.max(canvasW, canvasH))
+    mipLevelCount: numMipLevels,
+  })
 
   //Bind groups - layouts
   const gBufferConstantsBindGroupLayout = device.createBindGroupLayout({
@@ -166,7 +212,13 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       binding: 0,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: 'uniform', minBindingSize: MAT4_SIZE + MAT4_SIZE }
-    }],
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'read-only-storage' }
+    }
+    ],
     label: 'gBufferConstantsBindGroupLayout'
   });
 
@@ -242,6 +294,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     ]
   })
 
+
   const computeHoverBindGroupLayout = device.createBindGroupLayout({
     entries: [{
       binding: 0,
@@ -274,6 +327,113 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     ]
   })
 
+  const computeBoundingBoxesBindingGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'storage',
+      }
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'read-only-storage',
+      },
+    },
+    {
+      binding: 2,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'read-only-storage',
+      },
+    }
+    ]
+  })
+
+
+  const computeOcclusionBindingGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'storage',
+      }
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'read-only-storage',
+      },
+    },
+    {
+      binding: 2,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'uniform',
+      },
+    },
+    {
+      binding: 3,
+      visibility: GPUShaderStage.COMPUTE,
+      texture: { sampleType: 'unfilterable-float' }
+    },
+    {
+      binding: 4,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: 'storage' }
+    },
+    {
+      binding: 5,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: 'storage' }
+    }
+    ]
+  })
+
+  const computeHizMipMapsBindingGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.COMPUTE,
+      texture: {
+        sampleType: 'unfilterable-float', //Kinda weird might cause issues? Cant be float for some reason
+        //sampleType: 'float',
+        viewDimension: '2d',
+      }
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.COMPUTE,
+      storageTexture: {
+        access: 'write-only',
+        format: 'r32float',
+        viewDimension: '2d'
+      }
+    },
+    ]
+  })
+
+  const computeDepthToFloatBindGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.COMPUTE,
+      texture: {
+        sampleType: 'depth'
+      }
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.COMPUTE,
+      storageTexture: {
+        access: 'write-only',
+        format: 'r32float'
+      }
+    }
+    ]
+  })
+
   //Bind groups - creation
   const gBufferConstantsBindGroup = device.createBindGroup({
     layout: gBufferConstantsBindGroupLayout,
@@ -284,7 +444,14 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         size: MAT4_SIZE + MAT4_SIZE,
         offset: 0
       }
-    }]
+    },
+    {
+      binding: 1,
+      resource: {
+        buffer: computeBindingBoxesOutputBuffer,
+      }
+    }
+    ]
   });
 
   const gBufferInstanceOffsetBindGroup = device.createBindGroup({
@@ -338,6 +505,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     ]
   })
 
+
   const computeHoverBindGroup = device.createBindGroup({
     layout: computeHoverBindGroupLayout,
     entries: [
@@ -367,6 +535,72 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       }
     ]
   })
+
+  const computeBoundingBoxesBindGroup = device.createBindGroup({
+    layout: computeBoundingBoxesBindingGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: computeBindingBoxesOutputBuffer,
+        }
+      },
+      {
+        binding: 1,
+        resource: {
+          buffer: ifcModelVertexBuffer
+        }
+      },
+      {
+        binding: 2,
+        resource: {
+          buffer: ifcModelIndexBuffer
+        }
+      },
+    ],
+  });
+
+
+  const computeOcclusionBindingGroup = device.createBindGroup({
+    layout: computeOcclusionBindingGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: drawIndirectCommandBuffer,
+        }
+      },
+      {
+        binding: 1,
+        resource: {
+          buffer: computeBindingBoxesOutputBuffer
+        }
+      },
+      {
+        binding: 2,
+        resource: {
+          buffer: viewProjectionMatrixBuffer
+        }
+      },
+      {
+        binding: 3,
+        resource: hizMipMapsTexture.createView()
+      },
+      {
+        binding: 4,
+        resource: {
+          buffer: filteredDrawIndirectCommandBuffer
+        }
+      },
+      {
+        binding: 5,
+        resource: {
+          buffer: gBufferInstnaceConstantsBuffer
+        }
+      }
+    ],
+  });
+
 
   //Pipelines
   const mainPassPipeline = function() {
@@ -450,6 +684,58 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     return computePipeline;
   }();
 
+  const computeBoundingBoxesPipeline = function() {
+    const computePipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [computeBoundingBoxesBindingGroupLayout],
+      }),
+      compute: {
+        module: computeBoundingBoxesModule,
+        entryPoint: 'main'
+      }
+    })
+    return computePipeline;
+  }();
+
+  const computeOcclusionPipeline = function() {
+    const computePipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [computeOcclusionBindingGroupLayout],
+      }),
+      compute: {
+        module: computeOcclusionModule,
+        entryPoint: 'main'
+      }
+    })
+    return computePipeline;
+  }();
+
+  const computeHizMipMapsPipeline = function() {
+    const computePipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [computeHizMipMapsBindingGroupLayout],
+      }),
+      compute: {
+        module: computeHizMipMapsModule,
+        entryPoint: 'main'
+      }
+    })
+    return computePipeline;
+  }();
+
+  const computeDepthToFloatPipeline = function() {
+    const computePipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [computeDepthToFloatBindGroupLayout],
+      }),
+      compute: {
+        module: computeHizMipMapsModule,
+        entryPoint: 'convertDepthToHiZ'
+      }
+    })
+    return computePipeline;
+  }();
+
 
   //Render passes
   const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 }
@@ -528,6 +814,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     indexDataArray.set(instanceGroup.baseGeometry.indexArray, _offsetIndexBytes / 4);
     firstInstanceOffset += instanceGroup.instances.length;
 
+    //But shouldnt this be uniforms per instance group instead of per instance and lookup?
     instanceGroup.instances.forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
       let currOffset = ((16 * 4 + 3 * 4 + 1 * 4 + 12 * 4) / 4) * instanceI;
       instanceDataArrayFloatView.set(instance.flatTransform, currOffset);
@@ -597,8 +884,9 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let lastFrameMS = Date.now()
   const fpsElem = document.querySelector("#fps")!;
   let frameCount = 0;
-  async function render() {
 
+
+  async function render() {
     frameCount++;
     const now = Date.now();
     const deltaTime = (now - lastFrameMS) / 1000;
@@ -606,6 +894,76 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     lastFrameMS = now;
     const fps = 1 / deltaTime;             // compute frames per second
     fpsElem.textContent = fps.toFixed(1);
+    let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
+
+
+    //TODO: Testing ofc remove this form loop
+    //const tempEncoderPass = device.createCommandEncoder()
+    //const tempEncoder = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
+    //tempEncoder.setPipeline(computeBoundingBoxesPipeline);
+    //tempEncoder.setBindGroup(0, computeBoundingBoxesBindGroup)
+    //tempEncoder.dispatchWorkgroups(instancesCountLd);
+    //tempEncoder.end();
+    //okay chec ck how to genreate hizmap and how to use occlusin queryis if needed
+
+    //if (frameCount < 100) {
+    //  console.log("GOOO")
+    ////TODO: And this stays indeed, is how we test for what to occlude every frame...
+    //const tempEncoder2 = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
+    //tempEncoder2.setPipeline(computeOcclusionPipeline);
+    //tempEncoder2.setBindGroup(0, computeOcclusionBindingGroup)
+    //device.queue.writeBuffer(viewProjectionMatrixBuffer, 0, new Float32Array([...cameraMatrix, ...proMat]))
+    //tempEncoder2.dispatchWorkgroups(instancesCountLd);
+    //tempEncoder2.end();
+    //
+    ////}
+    //const tempEncoderDepthToFloat = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
+    //tempEncoderDepthToFloat.setPipeline(computeDepthToFloatPipeline);
+    //let computeDepthToFloatBindGroup = device.createBindGroup({
+    //  layout: computeDepthToFloatBindGroupLayout,
+    //  entries: [{
+    //    binding: 0,
+    //    resource: depthTexture.createView()
+    //  },
+    //  {
+    //    binding: 1,
+    //    resource: hizMipMapsTexture.createView({ baseMipLevel: 0, mipLevelCount: 1 })
+    //  }
+    //  ]
+    //})
+    //tempEncoderDepthToFloat.setBindGroup(0, computeDepthToFloatBindGroup);
+    //tempEncoderDepthToFloat.dispatchWorkgroups(canvasW, canvasH);
+    //tempEncoderDepthToFloat.end();
+    //
+    //const tempEncoder3 = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
+    //tempEncoder3.setPipeline(computeHizMipMapsPipeline);
+    //
+    ////First layer test
+    //let workgroupSizePerDim = 8; //compute workgroup size (8,8)
+    //for (let i = 1; i < numMipLevels; i++) {
+    //  let invocationCountX = maxPowerOf2SizeW / (2 * i);
+    //  let invocationCountY = maxPowerOf2SizeH / (2 * i);
+    //  let workgroupCountX = (invocationCountX + workgroupSizePerDim - 1) / workgroupSizePerDim;
+    //  let workgroupCountY = (invocationCountY + workgroupSizePerDim - 1) / workgroupSizePerDim;
+    //  let computeHizMipMapsBindingGroup = device.createBindGroup({
+    //    layout: computeHizMipMapsBindingGroupLayout,
+    //    entries: [{
+    //      binding: 0,
+    //      resource: hizMipMapsTexture.createView({ baseMipLevel: i - 1, mipLevelCount: 1 })
+    //    },
+    //    {
+    //      binding: 1,
+    //      resource: hizMipMapsTexture.createView({ baseMipLevel: i, mipLevelCount: 1 })
+    //    },
+    //    ]
+    //  });
+    //  tempEncoder3.setBindGroup(0, computeHizMipMapsBindingGroup);
+    //  tempEncoder3.dispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
+    //}
+    //
+    //tempEncoder3.end();
+    //device.queue.submit([tempEncoderPass.finish()]);
+
 
     let canvasView = context.getCurrentTexture().createView();
     mainPassDescriptor.colorAttachments[0].view = canvasView;
@@ -613,7 +971,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     const gBufferPassEncoder = commandEnconder.beginRenderPass(ifcModelPassDescriptor);
     gBufferPassEncoder.setPipeline(gBufferPipeline);
     let _dynamicOffset = 0;
-    let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
     device.queue.writeBuffer(gBufferConstantsUniform, 0, cameraMatrix);
 
     gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, 0);

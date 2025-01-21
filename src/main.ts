@@ -17,9 +17,10 @@ async function init() {
   }
 
   const device = await adapter.requestDevice();
+  //TODO: REMOVE WHEN TESTING STOPS
   const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
-  canvas.width = document.body.clientWidth;
-  canvas.height = document.body.clientHeight;
+  //canvas.width = document.body.clientWidth;
+  //canvas.height = document.body.clientHeight;
 
   //20220421MODEL REV01
   //Water and plumbing -> NBU_Duplex-Apt_Eng-HVAC.ifc
