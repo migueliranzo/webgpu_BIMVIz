@@ -98,29 +98,36 @@ const parseIfcFile = async function(FILE: Uint8Array) {
 
     //Construct itemProperties array by chunks
     const CHUNK_SIZE = 50;
-    const itemPropertiesMap = new Map();
+    let itemPropertiesMap = new Map();
     for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
       const chunk = instanceExpressIds.slice(i, i + CHUNK_SIZE);
       const chunkResults = await Promise.all(
         chunk.map(async expressId => {
           const itemProperties = await ifcAPI.properties.getItemProperties(modelID, expressId, false);
-          return [expressId, itemProperties];
+          const propertySets = await ifcAPI.properties.getPropertySets(modelID, expressId, true);
+
+          let processedPropertySets = {};
+          if (propertySets.length == 0) return
+          for (let i = 0; i < propertySets.length; i++) {
+            processedPropertySets[propertySets[i].Name.value] = [];
+            for (let e = 0; e < propertySets[i].HasProperties.length; e++) {
+              processedPropertySets[propertySets[i].Name.value].push({ [propertySets[i].HasProperties[e].Name.value]: propertySets[i].HasProperties[e].NominalValue.value });
+            }
+          }
+          itemPropertiesMap.set(expressId, { processedPropertySets, itemProperties })
         })
       );
-
-      chunkResults.forEach(([expressId, properties]) => {
-        itemPropertiesMap.set(expressId, properties);
-      });
-
       console.log((i + chunk.length) / instanceExpressIds.length);
     }
 
+
+    //Size of the itemsProperties 457728 - 0.4MB
+    //Size of the propertySet Map 25675117 - 25MB
+    //Size of processed propertySet 2822555 - 2.8MB
+
     let typesList = ifcAPI.GetAllTypesOfModel(modelID);
+    console.log(itemPropertiesMap)
     postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap, typesList });
-
-    //Depacrated
-    //const pipeGroups = getWaterPipesGroups();
-
 
     //Pipe grouping -- Make grouping function probably
     const cableSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
@@ -188,7 +195,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     }
 
     //Model tree structure
-    const treeGroupMeshId = new Map<any, any>;
     const mapTree = (treeNode) => {
       return {
         name: treeNode.type,
@@ -198,8 +204,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     }
 
     const modelTreeStructure = mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true));
-    console.log(modelTreeStructure)
-    //console.log(await ifcAPI.properties.getSpatialStructure(modelID, true))
 
     //Just adding everything here for now, surely it wont become a problem later -> it did.
     const generalProperties = { revitTypesInversed, instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };

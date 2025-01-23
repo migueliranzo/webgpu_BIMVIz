@@ -39,10 +39,10 @@ export function createFileHandler(FILE) {
       }
     }
 
-    //if (resolveCount == 3) {
-    //  myWorker.terminate();
-    //  myWorker.onmessage = null;
-    //}
+    if (resolveCount == 3) {
+      myWorker.terminate();
+      myWorker.onmessage = null;
+    }
   }
 
   return (() => {

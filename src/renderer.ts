@@ -643,7 +643,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     })
 
     meshGroupServiceHandler.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
-      console.log(toggledMeshesIdSet)
       for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
         fetchedMeshUniformsDataArray[e + 2] = 1;
 
@@ -655,7 +654,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     })
 
     meshGroupServiceHandler.treeListHoverOnChange((hoveredMeshesIdSet: Set<number>) => {
-      console.log(hoveredMeshesIdSet)
       for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
         if (hoveredMeshesIdSet.has(fetchedMeshUniformsDataArray[e])) {
           fetchedMeshUniformsDataArray[e + 3] = 0;

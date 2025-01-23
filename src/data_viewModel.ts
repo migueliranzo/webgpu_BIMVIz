@@ -10,21 +10,21 @@ export function createItemspropertyarrayhandle(items: Map<any, any>) {
 export function createDataViewModel(typesList: []) {
   const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
 
-  const updateRightSidePropsSync = function(propertyList) {
+  const updateRightSidePropsSync = function(itemPropertiesObject: { itemProperties: {}, processedPropertySets: {} }) {
+    console.log(itemPropertiesObject)
     const htmlList = document.createElement('div');
-    mapPropertiesToHtml(propertyList, htmlList);
+    mapPropertiesToHtml(itemPropertiesObject, htmlList);
     htmlList.classList.add('gap-5', 'flex', 'flex-col');
     RIGHTSIDEPANELELEMENT.appendChild(htmlList)
   }
 
-  //TODO: could use some work probably
-  function mapPropertiesToHtml(list: any, htmlist: HTMLDivElement) {
+  function mapPropertiesToHtml({ itemProperties, processedPropertySets }, htmlist: HTMLDivElement) {
     RIGHTSIDEPANELELEMENT.childNodes[0]?.remove()
-    const title = document.createElement('div');
-    title.classList.add('rightSidePanelHeader');
-    title.innerText = 'Objects properties'
-    htmlist.appendChild(title);
-    for (const value in list) {
+    const itemPropertiesTitle = document.createElement('div');
+    itemPropertiesTitle.classList.add('item-properties-title');
+    itemPropertiesTitle.innerText = 'Object properties'
+    htmlist.appendChild(itemPropertiesTitle);
+    for (const value in itemProperties) {
       const propertyRow = document.createElement('div');
       propertyRow.classList.add('flex', 'flex-row', 'justify-between');
       const propertyTitle = document.createElement('div');
@@ -32,19 +32,62 @@ export function createDataViewModel(typesList: []) {
       propertyTitle.classList.add('property-title')
       propertyValue.classList.add('property-value')
       propertyTitle.innerText = value;
-      if (typeof list[value] === 'object' && list[value]) {
-        propertyValue.innerText = list[value].value ? list[value].value : list[value].expressID;
+      if (typeof itemProperties[value] === 'object' && itemProperties[value]) {
+        propertyValue.innerText = itemProperties[value].value ? itemProperties[value].value : itemProperties[value].expressID;
       } else {
-        propertyValue.innerText = list[value];
+        propertyValue.innerText = itemProperties[value];
       }
 
       if (value == 'type') {
-        propertyValue.innerText = typesList.find((type) => type.typeID == list[value]).typeName;
+        propertyValue.innerText = typesList.find((type) => type.typeID == itemProperties[value]).typeName;
       }
 
       propertyRow.appendChild(propertyTitle);
       propertyRow.appendChild(propertyValue);
       htmlist.appendChild(propertyRow);
+    }
+
+
+    const itemPropertySets = document.createElement('div');
+    itemPropertySets.classList.add('item-propertySets-title');
+    itemPropertySets.innerText = 'Object property sets'
+    htmlist.appendChild(itemPropertySets);
+
+    for (const propertySetKey in processedPropertySets) {
+      const propertySetRow = document.createElement('div');
+      propertySetRow.classList.add('set-row-open')
+      const propertySetHeader = document.createElement('div');
+      propertySetHeader.innerText = propertySetKey;
+      propertySetHeader.classList.add('property-set-header')
+      propertySetRow.appendChild(propertySetHeader);
+
+      propertySetHeader.addEventListener(('click'), () => {
+        propertySetRow.classList.toggle('set-row-open');
+      })
+
+      const propertySetValues = processedPropertySets[propertySetKey]
+      propertySetValues.forEach((propertySetValuePair) => {
+        for (const propertySetValueKey in propertySetValuePair) {
+          const propertySetRowHeader = document.createElement('div');
+          propertySetRowHeader.classList.add('flex', 'flex-row', 'justify-between', 'property-set-value-row');
+
+          const propertySetTitle = document.createElement('div');
+          const propertySetValue = document.createElement('div');
+
+          propertySetTitle.classList.add('property-title')
+          propertySetValue.classList.add('property-value')
+
+          propertySetTitle.innerText = propertySetValueKey;
+          propertySetValue.innerText = propertySetValuePair[propertySetValueKey];
+
+          propertySetRowHeader.appendChild(propertySetTitle);
+          propertySetRowHeader.appendChild(propertySetValue)
+          propertySetRow.appendChild(propertySetRowHeader);
+        }
+
+      })
+
+      htmlist.appendChild(propertySetRow);
     }
   }
 
