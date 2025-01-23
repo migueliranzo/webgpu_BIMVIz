@@ -9,21 +9,37 @@
   <body>
     <div id="app">
       <div style='position: fixed' id='fps'></div>
-      <canvas width='800px' height='600px' id='canvas_main_render_target'></canvas>
+      <canvas width='800px' height='600px' style='backgroundColor: transparent' id='canvas_main_render_target'></canvas>
 
       <div class='p-2' style='position:absolute; top: 0; left: -20; padding-top: 3rem; '>
-        <div class='flex flex-col' id='changeViewBtn'>
+        <div class='flex flex-col gap-5' id='changeViewBtn'>
        <div class='justify-center align-center flex rounded-md  shadow-md' style='background-color: white; width: 40px; height: 40px;
     -webkit-user-select: none;'>
 <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded">
         </div>
+
+
+       <div class='justify-center align-center flex rounded-md  shadow-md' style='background-color: white; width: 40px; height: 40px;
+    -webkit-user-select: none;'>
+<img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=0m38bvTzUZwt&format=png 1x, https://img.icons8.com/?size=48&id=0m38bvTzUZwt&format=png 2x" width="24" height="24" alt="Tree icon" class="loaded">
         </div>
 
+        </div>
+      </div>
 
+        <div style='max-width: 300px; height:calc(100dvh - 3rem); top: 3rem; position: absolute; right: 0; overflow: hidden; 
+-webkit-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
+-moz-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
+box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
+border-top-left-radius: 5px;
+        '>
+        <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-4' style='height: 100%; display: flex; overflow: hidden; background-color: white;
+        font-size: 13px'>
+        </div>
       </div>
-        <div style='max-width: 300px; height:calc(100dvh - 3.8rem); top: 3.8rem; position: absolute; right: 0; overflow: hidden'>
-        <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-2' style='height: 100%; display: flex; overflow: hidden;'></div>
-      </div>
+
+     <div id='leftSideTreeStructurePanel' style='position: absolute; top: 150px; background: white; padding: 10px; height: 90vh; overflow-y: scroll'></div>
+
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

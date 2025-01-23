@@ -21,6 +21,14 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let canvasW = canvas.width;
   let canvasH = canvas.height;
 
+  const swapChainFormat = navigator.gpu.getPreferredCanvasFormat();
+  const swapChainDescriptor = {
+    device: device,
+    format: swapChainFormat,
+    alphaMode: "premultiplied",
+    usage: GPUTextureUsage.RENDER_ATTACHMENT
+  };
+
   //Camera 
   const cameraSettings = {
     eye: vec3.create(2., 2.2, 8.0),
@@ -57,7 +65,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   loadedModel.forEach((x) => {
     verCountLd += x.baseGeometry.vertexArray.byteLength;
     indCountLd += x.baseGeometry.indexArray.byteLength;
-    instancesCountLd += x.instances.length;
+    instancesCountLd += x.instances ? x.instances.length : x.transparentInstances.length;
   })
 
   //Buffer creation
@@ -118,7 +126,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   })
 
   const gBufferMeshUniformBuffer = device.createBuffer({
-    size: meshCount * 8,
+    size: meshCount * VEC4_SIZE,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     label: 'gBufferMeshUniformBuffer'
   })
@@ -379,7 +387,21 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         module: mainPassShaderModule,
         entryPoint: 'fragment_main',
         targets: [
-          { format: navigator.gpu.getPreferredCanvasFormat() }],
+          {
+            format: swapChainFormat,
+            blend: {
+              color: {
+                srcFactor: "src-alpha",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              },
+              alpha: {
+                srcFactor: "one",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              }
+            }
+          }],
       },
       layout: device.createPipelineLayout({
         bindGroupLayouts: [mainPassBindgroupLayout],
@@ -415,14 +437,29 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         targets: [
           { format: 'rgba16float' }, // worldPos
           { format: 'rgba16float' }, // worldNormal
-          { format: 'rgba8unorm' }, // albedo
-          { format: 'r32uint' }, // Ids 
+          {
+            format: 'rgba8unorm',
+            blend: {
+              color: {
+                srcFactor: "src-alpha",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              },
+              alpha: {
+                srcFactor: "one",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              }
+            }
+          }, // albedo
+          { format: 'r32uint' }, // Ids ,
+
         ]
       },
       primitive: {
         topology: 'triangle-list',
-        //frontFace: 'ccw',
-        cullMode: 'back'
+        frontFace: 'ccw',
+        cullMode: 'back' //TODO: Front also works for the kitchen
       },
       depthStencil: {
         depthWriteEnabled: true,
@@ -452,7 +489,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
 
   //Render passes
-  const clearColor = { r: 0.0, g: 0.5, b: 1.0, a: 1.0 }
+  const clearColor = { r: 1.0, g: 0.5, b: 1.0, a: 0.0 }
   const mainPassDescriptor: GPURenderPassDescriptor = {
     colorAttachments: [{
       clearValue: clearColor,
@@ -508,7 +545,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let firstInstanceOffset = 0;
   const proMat = getProjectionMatrix(canvasW, canvasH);
   let vertexDataArray = new Float32Array(verCountLd / 4);
-  const commandArray = new Uint32Array(loadedModel.size * 5);
+  const drawCommandsArray = new Uint32Array(loadedModel.size * 5);
   let indexDataArray = new Uint32Array(indCountLd / 4);
   let instanceDataArray = new ArrayBuffer(instancesCountLd * (16 * 4 + 3 * 4 + 1 * 4 + 12 * 4));
   let instanceDataArrayFloatView = new Float32Array(instanceDataArray);
@@ -516,25 +553,28 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let instanceUniformOffsetDataArray = new Float32Array((loadedModel.size * ALIGNED_SIZE) / 4);
   const meshGroupsIds = new Float32Array(loadedModel.size * MAT4_SIZE);
   let meshLookUpIdOffsetIndex = 0;
-  loadedModel.forEach((instanceGroup) => {
-    commandArray[testI] = instanceGroup.baseGeometry.indexArray.length; //Index count
-    commandArray[testI + 1] = instanceGroup.instances.length; //Instance count
-    commandArray[testI + 2] = _offsetIndex; //Index buffer offset was  _offsetIndex
-    commandArray[testI + 3] = _offsetGeo//base vertex? was _offsetGeo
-    commandArray[testI + 4] = 0;  //first instance? was firstInstanceOffset
+  const transparentInstancesGroups = [];
+
+  const processInstanceGroups = (instanceGroup) => {
+    const instanceType = instanceGroup.instances ? 'instances' : 'transparentInstances';
+    drawCommandsArray[testI] = instanceGroup.baseGeometry.indexArray.length; //Index count
+    drawCommandsArray[testI + 1] = instanceGroup[instanceType].length; //Instance count
+    drawCommandsArray[testI + 2] = _offsetIndex; //Index buffer offset was  _offsetIndex
+    drawCommandsArray[testI + 3] = _offsetGeo//base vertex? was _offsetGeo
+    drawCommandsArray[testI + 4] = 0;  //first instance? was firstInstanceOffset
 
     instanceUniformOffsetDataArray.set(Float32Array.of(firstInstanceOffset, 0, 0, 0), instanceGroupI * (ALIGNED_SIZE / 4));
     vertexDataArray.set(instanceGroup.baseGeometry.vertexArray, _offsetGeoBytes / 4);
     indexDataArray.set(instanceGroup.baseGeometry.indexArray, _offsetIndexBytes / 4);
-    firstInstanceOffset += instanceGroup.instances.length;
+    firstInstanceOffset += instanceGroup[instanceType].length;
 
-    instanceGroup.instances.forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
+    instanceGroup[instanceType].forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
       let currOffset = ((16 * 4 + 3 * 4 + 1 * 4 + 12 * 4) / 4) * instanceI;
       instanceDataArrayFloatView.set(instance.flatTransform, currOffset);
-      instanceDataArrayFloatView.set([instance.color.x, instance.color.y, instance.color.z], currOffset + 16)
-      instanceDataArrayUintView.set([(instance.lookUpId) + meshLookUpIdOffsets[meshLookUpIdOffsetIndex]], currOffset + 16 + 3);
+      instanceDataArrayFloatView.set([instance.color.x, instance.color.y, instance.color.z, instance.color.w], currOffset + 16)
+      instanceDataArrayUintView.set([(instance.lookUpId) + meshLookUpIdOffsets[meshLookUpIdOffsetIndex]], currOffset + 16 + 4);
+      if (instance.lookUpId + 1 == meshLookUpIdOffsets[meshLookUpIdOffsetIndex + 1] && instanceI != 0) meshLookUpIdOffsetIndex += 1;
       instanceI++;
-      if (instance.lookUpId == meshLookUpIdOffsets[meshLookUpIdOffsetIndex + 1]) meshLookUpIdOffsetIndex += 1;
     })
 
     _offsetGeo += instanceGroup.baseGeometry.vertexArray.length / 6;
@@ -543,12 +583,23 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     _offsetGeoBytes += instanceGroup.baseGeometry.vertexArray.byteLength
     instanceGroupI++;
     testI += 5;
+
+  }
+
+  loadedModel.forEach((instanceGroup) => {
+    if (!instanceGroup.instances) {
+      transparentInstancesGroups.push(instanceGroup);
+      return;
+    }
+    processInstanceGroups(instanceGroup);
   })
+
+  transparentInstancesGroups.forEach((instanceGroup) => processInstanceGroups(instanceGroup))
 
   //Static buffers write
   device.queue.writeBuffer(gBufferInstanceOffsetBuffer, 0, instanceUniformOffsetDataArray)
   device.queue.writeBuffer(gBufferInstnaceConstantsBuffer, 0, instanceDataArray)
-  device.queue.writeBuffer(drawIndirectCommandBuffer, 0, commandArray);
+  device.queue.writeBuffer(drawIndirectCommandBuffer, 0, drawCommandsArray);
   device.queue.writeBuffer(gBufferConstantsUniform, 64, proMat);
   device.queue.writeBuffer(ifcModelVertexBuffer, 0, vertexDataArray);
   device.queue.writeBuffer(ifcModelIndexBuffer, 0, indexDataArray);
@@ -557,14 +608,20 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
   let typesStatesBufferStrides = new Map<any, any>;
   {
-    getMeshGroupsHandler().getMeshGroups().then(({ meshLookUpIdsList, meshTypeIdMap, typesIdStateMap }) => {
-      console.log(meshLookUpIdsList, meshTypeIdMap, typesIdStateMap);
-      const meshUniformsDataArray = new Uint32Array((2) * meshLookUpIdsList.length);
+    const meshGroupServiceHandler = getMeshGroupsHandler();
+    let fetchedMeshLookUpIdsList = [];
+    let fetchedMeshUniformsDataArray = [];
+    meshGroupServiceHandler.getMeshGroups().then(({ meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, modelTreeStructure }) => {
+      console.log(meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, modelTreeStructure);
+      fetchedMeshLookUpIdsList = meshLookUpIdsList;
+      const meshUniformsDataArray = new Uint32Array((4) * meshLookUpIdsList.length);
       for (let i = 0; i < meshLookUpIdsList.length; i++) {
-        let offset = ((2 * 4) / 4) * i;
+        let offset = ((4 * 4) / 4) * i;
         let stringType = meshTypeIdMap.get(meshLookUpIdsList[i]) ? meshTypeIdMap.get(meshLookUpIdsList[i]) : 'noGroup';
         meshUniformsDataArray[offset] = meshLookUpIdsList[i];
-        meshUniformsDataArray[offset + 1] = typesIdStateMap.get(stringType) ? typesIdStateMap.get(stringType).typeId : 99; //??? BTW we can add the arquitecture walls and all meshses really into a group so we can , say fade them all when enabling cable view for example, I honestly dont think is worth going through the trouble of separating each wall group n stuff, at least for now
+        meshUniformsDataArray[offset + 1] = typesIdStateMap.get(stringType) ? typesIdStateMap.get(stringType).typeId : 99;
+        meshUniformsDataArray[offset + 2] = 1;
+        meshUniformsDataArray[offset + 3] = 1;
       }
 
       const typeStatesDataArray = new Float32Array(typesIdStateMap.size * 4); //uint State + vec3 color for now
@@ -576,7 +633,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         typesStatesBufferStrides.set(typeIdObject.typeId, { stride: offset * 4, stringType: typeIdObject.stringType })
         i++
       })
-
+      fetchedMeshUniformsDataArray = meshUniformsDataArray;
       device.queue.writeBuffer(typeStatesBuffer, 0, typeStatesDataArray)
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, meshUniformsDataArray)
 
@@ -584,6 +641,31 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       //let testType = typesStatesBufferStrides.get(1);
       //device.queue.writeBuffer(typeStatesBuffer, testType.stride + 12, new Float32Array([1]))
     })
+
+    meshGroupServiceHandler.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
+      console.log(toggledMeshesIdSet)
+      for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
+        fetchedMeshUniformsDataArray[e + 2] = 1;
+
+        if (toggledMeshesIdSet.has(fetchedMeshUniformsDataArray[e])) {
+          fetchedMeshUniformsDataArray[e + 2] = 0;
+        }
+      }
+      device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
+    })
+
+    meshGroupServiceHandler.treeListHoverOnChange((hoveredMeshesIdSet: Set<number>) => {
+      console.log(hoveredMeshesIdSet)
+      for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
+        if (hoveredMeshesIdSet.has(fetchedMeshUniformsDataArray[e])) {
+          fetchedMeshUniformsDataArray[e + 3] = 0;
+        } else {
+          fetchedMeshUniformsDataArray[e + 3] = 1;
+        }
+      }
+      device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
+    })
+
   }
 
   let previousSelectedId = 0;

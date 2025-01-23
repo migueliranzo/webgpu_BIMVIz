@@ -34,15 +34,15 @@ export function createFileHandler(FILE) {
       }
       case 'itemPropertiesReady': {
         resolveCount++;
-        itemPropertiesResolve(x.data.itemPropertiesMap)
+        itemPropertiesResolve({ itemPropertiesMap: x.data.itemPropertiesMap, typesList: x.data.typesList })
         break;
       }
     }
 
-    if (resolveCount == 3) {
-      myWorker.terminate();
-      myWorker.onmessage = null;
-    }
+    //if (resolveCount == 3) {
+    //  myWorker.terminate();
+    //  myWorker.onmessage = null;
+    //}
   }
 
   return (() => {

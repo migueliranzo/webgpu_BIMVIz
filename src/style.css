@@ -30,6 +30,9 @@ body{
 
 .px-2 { padding-right: 0.5rem; padding-left: 0.5rem; }
 .p-2 { padding : 0.5rem}
+.p-4 { padding : 1.0rem}
+.px-4 { padding-right: 1.0rem; padding-left: 1.0rem; }
+
 .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
 
 .rounded-sm {border-radius: .15rem;}
@@ -55,6 +58,13 @@ body{
  gap: 0.5rem;
 }
 
+#rightSidePropertiesPanel .rightSidePanelHeader {
+  font-size: 16px;
+  font-weight: 500;
+  padding-top: 0.7rem;
+  padding-bottom: 0.3rem;
+}
+
 .property-value{
 
 }
@@ -73,4 +83,52 @@ text-transform: capitalize;
 .translateFullyRigthX{
 transform: translateX(100%);
 }
+
+#leftSideTreeStructurePanel div {
+  cursor: pointer;
+}
+
+#leftSideTreeStructurePanel button{
+  border-style: none;
+}
+
+.visible{
+  display: block; 
+}
+
+.hidden{
+  display: none;
+}
+
+.nodeContainer{
+  /*display:flex; */
+}
+
+.nodeArrow::before{
+    content: '';
+    border: 10px solid black;
+    border-right: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+    border-top: 10px solid transparent;
+  display: inline-block;
+}
+
+.nodeArrowDown::before{
+    content: '';
+    border: 10px solid black;
+    border-right: 10px solid transparent;
+    border-left: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+  display: inline-block;
+}
+
+.nodeDot::before{
+content: ' ';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    display: inline-block;
+    background: #000000;
+}
+
 

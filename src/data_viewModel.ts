@@ -1,5 +1,3 @@
-import { INTEGER } from "web-ifc";
-
 export function createItemspropertyarrayhandle(items: Map<any, any>) {
 
   return {
@@ -9,7 +7,7 @@ export function createItemspropertyarrayhandle(items: Map<any, any>) {
   }
 }
 
-export function createDataViewModel(generalProperties: { typesList: [], pipeGroups: Map<any, any> }) {
+export function createDataViewModel(typesList: []) {
   const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
 
   const updateRightSidePropsSync = function(propertyList) {
@@ -22,6 +20,10 @@ export function createDataViewModel(generalProperties: { typesList: [], pipeGrou
   //TODO: could use some work probably
   function mapPropertiesToHtml(list: any, htmlist: HTMLDivElement) {
     RIGHTSIDEPANELELEMENT.childNodes[0]?.remove()
+    const title = document.createElement('div');
+    title.classList.add('rightSidePanelHeader');
+    title.innerText = 'Objects properties'
+    htmlist.appendChild(title);
     for (const value in list) {
       const propertyRow = document.createElement('div');
       propertyRow.classList.add('flex', 'flex-row', 'justify-between');
@@ -37,7 +39,7 @@ export function createDataViewModel(generalProperties: { typesList: [], pipeGrou
       }
 
       if (value == 'type') {
-        propertyValue.innerText = generalProperties.typesList.find((type) => type.typeID == list[value]).typeName;
+        propertyValue.innerText = typesList.find((type) => type.typeID == list[value]).typeName;
       }
 
       propertyRow.appendChild(propertyTitle);

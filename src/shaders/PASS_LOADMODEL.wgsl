@@ -1,9 +1,9 @@
 //Different by instance same each pass
 struct Uniforms {
   modelMatrix: mat4x4f,
-  color: vec3f,
+  color: vec4f,
   id: u32,
-  padding: mat3x3f
+  padding: mat2x4f
 }
 
 //Same by instance different each pass
@@ -14,7 +14,9 @@ struct ConstantUnifroms {
 
 struct MeshData {
   meshId: u32,
-  typeId: u32
+  typeId: u32,
+  treeVisibilityToggle: u32,
+  treeVisibilityHover: u32
 }
 
 struct typeState {
@@ -47,11 +49,23 @@ fn vertex_main(@location(0) position: vec3f, @location(1) normal: vec3f, @builti
     output.position = mvpMatrix * vec4f(position, 1.0);
     output.worldPos = (instanceUniforms.modelMatrix * vec4f(position, 1.0)).xyz;
     output.normal = normalize(instanceUniforms.modelMatrix * vec4(normal, 0.0)).xyz;
-    output.albedo = vec4(instanceUniforms.color, 1.0);
+    output.albedo = vec4(instanceUniforms.color);
     output.id = meshData.meshId;
+
     if instanceTypeState.state == 1. {
         output.albedo = vec4(instanceTypeState.color, 1.0);
     }
+
+
+    if meshData.treeVisibilityToggle == 0 {
+        output.albedo = vec4(1.0, 0., 0., 0.5);
+    }
+
+
+    if meshData.treeVisibilityHover == 0 {
+        output.albedo = vec4(0.0, 1., 0., 0.5);
+    }
+
     return output;
 }
 

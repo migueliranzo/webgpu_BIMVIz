@@ -19,17 +19,17 @@ fn fragment_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f3
     let textCoord = position.xy / vec2<f32>(textureDimensions(positionTexture));
     let positionTexture = textureLoad(positionTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(positionTexture))), 0).xyz;
     let normalTexture = normalize(textureLoad(normalTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(normalTexture))), 0).xyz);//keep an eye on this normalization
-    let albedoTexture = textureLoad(albedoTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(albedoTexture))), 0).xyz;
+    let albedoTexture = textureLoad(albedoTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(albedoTexture))), 0).xyzw;
     let idTexture = textureLoad(idTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(idTexture))), 0).x;
 
-    var highlight = vec3f(0.);
+    var highlight = vec4f(0.);
     //if hoverStates[idTexture] > 0. {
     //    highlight = vec3f(1.0);
    // }
 
     if selectedID[0] == f32(idTexture) && selectedID[0] != 0 {
-        highlight = vec3f(1.0);
+        highlight = vec4f(vec3f(1.0), 0.);
     }
 
-    return vec4f(albedoTexture + highlight, 1.0);
+    return vec4f(albedoTexture + highlight);
 }

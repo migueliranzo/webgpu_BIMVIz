@@ -101,7 +101,7 @@ export class OrbitCamera extends CameraBase implements Camera {
 
   rotationSpeed = 0.005;
   zoomSpeed = 0.1;
-  translationSpeed = 0.002;
+  translationSpeed = 0.005;
   constructor(options?: { position?: Vec3 }) {
     super();
     if (options?.position) {

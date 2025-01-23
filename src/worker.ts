@@ -28,7 +28,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
   const ifcAPI = new IfcAPI();
   ifcAPI.SetWasmPath("../node_modules/web-ifc/");
   await ifcAPI.Init();
-
   const start = ms();
   const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: false });
   const time = ms() - start;
@@ -38,6 +37,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
   const instanceExpressIds: number[] = [];
 
   console.log(`Opening model took ${time} ms`);
+
 
   if (ifcAPI.GetModelSchema(modelID) == 'IFC2X3' ||
     ifcAPI.GetModelSchema(modelID) == 'IFC4' ||
@@ -70,17 +70,17 @@ const parseIfcFile = async function(FILE: Uint8Array) {
 
         const geometryKey = generateGeometryHash(vertexArray);
 
+        let group = processedGeometry.color.w != 1 ? 'transparentInstances' : 'instances';
         if (!instanceMap.has(geometryKey)) {
           instanceMap.set(geometryKey, {
             baseGeometry: {
               vertexArray,
               indexArray
             },
-            instances: []
+            [group]: []
           })
         }
-
-        instanceMap.get(geometryKey).instances.push({
+        instanceMap.get(geometryKey)[group]?.push({
           meshExpressId: mesh.expressID,
           lookUpId: lookUpId,
           color: processedGeometry.color,
@@ -115,15 +115,14 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       console.log((i + chunk.length) / instanceExpressIds.length);
     }
 
-    console.log(itemPropertiesMap);
-    postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap });
-
-    const pipeGroups = getWaterPipesGroups();
-
     let typesList = ifcAPI.GetAllTypesOfModel(modelID);
-    console.log(typesList)
+    postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap, typesList });
 
-    //Pipe grouping
+    //Depacrated
+    //const pipeGroups = getWaterPipesGroups();
+
+
+    //Pipe grouping -- Make grouping function probably
     const cableSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
     const pipeSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPESEGMENTTYPE)
     const pipeFittingTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPEFITTINGTYPE)
@@ -187,89 +186,27 @@ const parseIfcFile = async function(FILE: Uint8Array) {
         }
       }
     }
+
+    //Model tree structure
+    const treeGroupMeshId = new Map<any, any>;
+    const mapTree = (treeNode) => {
+      return {
+        name: treeNode.type,
+        expressId: treeNode.expressID,
+        children: treeNode.children.map((child) => mapTree(child))
+      }
+    }
+
+    const modelTreeStructure = mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true));
+    console.log(modelTreeStructure)
+    //console.log(await ifcAPI.properties.getSpatialStructure(modelID, true))
+
     //Just adding everything here for now, surely it wont become a problem later -> it did.
-    const generalProperties = { typesList, pipeGroups, revitTypesInversed, instanceExpressIds, meshTypeIdMap, typesIdStateMap };
+    const generalProperties = { revitTypesInversed, instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
   }
 
   ifcAPI.CloseModel(modelID);
-
-  //Grouping functions
-  function getWaterPipesGroups() {
-    const connectsPortToElementObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTTOELEMENT);
-    const connectsPortsObjects = ifcAPI.GetLineIDsWithType(modelID, IFCRELCONNECTSPORTS);
-
-    const portToFlowSegment = new Map();
-    for (let test of connectsPortToElementObjects) {
-      let rel = ifcAPI.GetLine(modelID, test);
-      portToFlowSegment.set(rel.RelatingPort.value, rel.RelatedElement.value);
-    }
-
-    //Create a map for our disjoint set
-    const parent = new Map();
-    const rank = new Map();
-
-    // Initialize each flow segment as its own set
-    const allFlowSegments = new Set([...portToFlowSegment.values()]);
-    allFlowSegments.forEach(flowSegment => {
-      parent.set(flowSegment, flowSegment);
-      rank.set(flowSegment, 0);
-    });
-
-    // Find with path compression
-    function find(x) {
-      if (parent.get(x) !== x) {
-        parent.set(x, find(parent.get(x)));
-      }
-      return parent.get(x);
-    }
-
-    // Union by rank
-    function union(x, y) {
-      let rootX = find(x);
-      let rootY = find(y);
-
-      if (rootX !== rootY) {
-        if (rank.get(rootX) < rank.get(rootY)) {
-          [rootX, rootY] = [rootY, rootX];
-        }
-        parent.set(rootY, rootX);
-        if (rank.get(rootX) === rank.get(rootY)) {
-          rank.set(rootX, rank.get(rootX) + 1);
-        }
-      }
-    }
-
-    // Process IFCRELCONNECTSPORTS to union flow segments
-    for (let test of connectsPortsObjects) {
-      let connectsPortsObject = ifcAPI.GetLine(modelID, test);
-      const flowSegment1 = portToFlowSegment.get(connectsPortsObject.RelatingPort.value);
-      const flowSegment2 = portToFlowSegment.get(connectsPortsObject.RelatedPort.value);
-
-      if (flowSegment1 && flowSegment2) {
-        union(flowSegment1, flowSegment2);
-      }
-    };
-
-    // Create final grouping
-    const grouping = new Map();
-    let groupId = 0;
-    const groupIds = new Map();
-
-    allFlowSegments.forEach(flowSegment => {
-      const root = find(flowSegment);
-      if (!groupIds.has(root)) {
-        groupIds.set(root, groupId++);
-      }
-      grouping.set(flowSegment, groupIds.get(root));
-    });
-
-    // Now grouping maps each flow segment to its group ID
-    console.log(grouping);
-
-    return grouping;
-  }
-
 }
 
 function generateGeometryHash(vertexArray: Float32Array) {
