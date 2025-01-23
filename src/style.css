@@ -58,12 +58,18 @@ body{
  gap: 0.5rem;
 }
 
-#rightSidePropertiesPanel .rightSidePanelHeader {
-  font-size: 16px;
+#rightSidePropertiesPanel .item-properties-title, .item-propertySets-title {
+  font-size: 18px;
   font-weight: 500;
   padding-top: 0.7rem;
   padding-bottom: 0.3rem;
 }
+
+div.property-set-header{
+  background: salmon; 
+  cursor: pointer;
+}
+
 
 .property-value{
 
@@ -72,6 +78,10 @@ body{
 font-weight: bold;
 text-transform: capitalize;
 
+}
+
+.set-row-open .property-set-value-row{
+  display: none;
 }
 
 .transition-all {
