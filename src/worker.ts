@@ -235,36 +235,3 @@ function generateGeometryHash(vertexArray: Float32Array) {
 
   return hash;
 }
-
-
-
-
-
-//const CHUNK_SIZE = 50;
-//const itemPropertiesMap = new Map();
-//const combinedItemPropertiesMap = new Map();
-//for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
-//  //const chunk = instanceExpressIds.slice(i, i + CHUNK_SIZE);
-//  for (let u = 0; u < CHUNK_SIZE; u++) {
-//    let expressId = instanceExpressIds[i + u];
-//    //TODO: absolutelty not. just testing
-//    if (expressId) {
-//      const itemProperties = await ifcAPI.properties.getItemProperties(modelID, expressId, false);
-//      const propertySets = await ifcAPI.properties.getPropertySets(modelID, expressId, true);
-//
-//      let processedPropertySets = {};
-//      if (propertySets.length == 0) return
-//      for (let a = 0; a < propertySets.length; a++) {
-//        processedPropertySets[propertySets[a].Name.value] = [];
-//        if (!propertySets[a].HasProperties) return;
-//        for (let e = 0; e < propertySets[a].HasProperties.length; e++) {
-//          processedPropertySets[propertySets[a].Name.value].push({ [propertySets[a].HasProperties[e].Name.value]: propertySets[a].HasProperties[e].NominalValue.value });
-//        }
-//
-//      }
-//
-//      itemPropertiesMap.set(expressId, { processedPropertySets, itemProperties });
-//    }
-//  }
-//  console.log((i + CHUNK_SIZE) / instanceExpressIds.length);
-//}
