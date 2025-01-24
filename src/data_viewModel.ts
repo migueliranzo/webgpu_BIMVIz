@@ -11,7 +11,6 @@ export function createDataViewModel(typesList: []) {
   const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
 
   const updateRightSidePropsSync = function(itemPropertiesObject: { itemProperties: {}, processedPropertySets: {} }) {
-    console.log(itemPropertiesObject)
     const htmlList = document.createElement('div');
     mapPropertiesToHtml(itemPropertiesObject, htmlList);
     htmlList.classList.add('gap-5', 'flex', 'flex-col');
@@ -37,7 +36,6 @@ export function createDataViewModel(typesList: []) {
       } else {
         propertyValue.innerText = itemProperties[value];
       }
-
       if (value == 'type') {
         propertyValue.innerText = typesList.find((type) => type.typeID == itemProperties[value]).typeName;
       }
@@ -47,11 +45,11 @@ export function createDataViewModel(typesList: []) {
       htmlist.appendChild(propertyRow);
     }
 
-
-    const itemPropertySets = document.createElement('div');
-    itemPropertySets.classList.add('item-propertySets-title');
-    itemPropertySets.innerText = 'Object property sets'
-    htmlist.appendChild(itemPropertySets);
+    if (!processedPropertySets) return;
+    const itemPropertySetsTitle = document.createElement('div');
+    itemPropertySetsTitle.classList.add('item-propertySets-title');
+    itemPropertySetsTitle.innerText = 'Object property sets'
+    htmlist.appendChild(itemPropertySetsTitle);
 
     for (const propertySetKey in processedPropertySets) {
       const propertySetRow = document.createElement('div');

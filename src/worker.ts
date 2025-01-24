@@ -101,17 +101,21 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     let itemPropertiesMap = new Map();
     for (let i = 0; i < instanceExpressIds.length; i += CHUNK_SIZE) {
       const chunk = instanceExpressIds.slice(i, i + CHUNK_SIZE);
-      const chunkResults = await Promise.all(
+      await Promise.all(
         chunk.map(async expressId => {
           const itemProperties = await ifcAPI.properties.getItemProperties(modelID, expressId, false);
           const propertySets = await ifcAPI.properties.getPropertySets(modelID, expressId, true);
 
-          let processedPropertySets = {};
-          if (propertySets.length == 0) return
+          let processedPropertySets = propertySets.length ? {} : null;
           for (let i = 0; i < propertySets.length; i++) {
-            processedPropertySets[propertySets[i].Name.value] = [];
+            const currentSet = propertySets[i];
+            const setName = currentSet.Name.value;
+            processedPropertySets[setName] = [];
+
+            const properties = currentSet.HasProperties;
             for (let e = 0; e < propertySets[i].HasProperties.length; e++) {
-              processedPropertySets[propertySets[i].Name.value].push({ [propertySets[i].HasProperties[e].Name.value]: propertySets[i].HasProperties[e].NominalValue.value });
+              const property = properties[e];
+              processedPropertySets[setName].push({ [property.Name.value]: property.NominalValue.value });
             }
           }
           itemPropertiesMap.set(expressId, { processedPropertySets, itemProperties })
