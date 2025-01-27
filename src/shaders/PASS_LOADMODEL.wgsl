@@ -36,19 +36,45 @@ struct VertexOutput {
 }
 
 
+struct DrawCommandsBuffer {
+  indexCount: u32,
+    instanceCount: u32,
+    firstIndex: u32,
+    baseVertex: u32,
+    firstInstance: u32,
+}
+
+struct UniformOffsetBlock {
+    offset: vec4f,
+    padding1: mat3x4f,
+    padding2: mat4x4f,
+    padding3: mat4x4f,
+    padding4: mat4x4f,
+}
+
+
+struct DrawCommandsBufferTest {
+  indexCount: f32,
+    instanceCount: f32,
+    firstIndex: f32,
+    baseVertex: u32,
+    firstInstance: u32,
+}
+
 @binding(0) @group(0) var<uniform> constantUnifroms: ConstantUnifroms;
 @binding(0) @group(1) var<storage,read> instanceUniforms : array<Uniforms>;
 @binding(0) @group(2) var<uniform> instanceIndexOffset: vec4f;
 @binding(0) @group(3) var<storage,read> meshUniforms : array<MeshData>;
 @binding(1) @group(3) var<storage,read> typeStates : array<typeState>;
-@group(0) @binding(1) var<storage, read> instnacesBoundboxes: array<Boundbox>; 
+@group(0) @binding(1) var<storage, read> newCommands: array<DrawCommandsBufferTest>;
+@group(0) @binding(2) var<storage, read_write> instanceUniformsOffsetTest: array<UniformOffsetBlock>;
 
 //Lmao use the global invocation id as we do in the compute pass to index and remove the instanceIndexOffsetBuffer!!!
 @vertex 
 fn vertex_main(@location(0) position: vec3f, @location(1) normal: vec3f, @builtin(instance_index) instanceIndex: u32) -> VertexOutput {
     let instanceUniforms = instanceUniforms[instanceIndex + u32(instanceIndexOffset.x)];
     let meshData = meshUniforms[instanceUniforms.id];
-    let instanceBoundBox = instnacesBoundboxes[instanceIndex + u32(instanceIndexOffset.x)];
+    let testDataFromOcclusionPass = newCommands[instanceIndex + u32(instanceIndexOffset.x)];
     let instanceTypeState = typeStates[meshData.typeId];
     var output: VertexOutput;
     var mvpMatrix = constantUnifroms.projectionMatrix * constantUnifroms.viewMatrix * instanceUniforms.modelMatrix;

@@ -3,51 +3,106 @@ min: vec4f,
 max: vec4f,
 } 
 
+//struct Vertex {
+//@location(0) position: vec3f, 
+//@location(1) normal: vec3f,
+//}
+
+//Wait.... float32x3 is not the same as vec3<f32>? should be lol?
+
+//struct Vertex {
+ //position: vec3<f32>, 
+// normal: vec3<f32>,
+ //   padding: vec2<f32>,
+//}
+
 struct Vertex {
-@location(0) position: vec3f, 
-@location(1) normal: vec3f,
+    a: f32,
+    b: f32,
+    c: f32,
+    d: f32,
+    e: f32,
+    f: f32
+}
+
+struct Uniforms {
+  modelMatrix: mat4x4f,
+  color: vec3f,
+  id: u32,
+  padding: mat3x3f
+}
+
+
+struct ConstantUniforms {
+  viewMatrix: mat4x4f, 
+  projectionMatrix: mat4x4f, 
+}
+
+struct DrawCommandsBuffer {
+  indexCount: u32,
+    instanceCount: u32,
+    firstIndex: u32,
+    baseVertex: u32,
+    firstInstance: u32,
 }
 
 @group(0) @binding(0) var<storage, read_write> instnacesBoundboxes: array<Boundbox>;
 @group(0) @binding(1) var<storage, read> vertexBuffer: array<Vertex>;
 @group(0) @binding(2) var<storage, read> indexBuffer: array<u32>;
+@group(0) @binding(3) var<storage, read> instanceUniforms: array<Uniforms>;
+@group(0) @binding(4) var<uniform> constantUniforms: ConstantUniforms;
+@group(0) @binding(5) var<storage, read> drawCommands: array<DrawCommandsBuffer>;
+@group(0) @binding(6) var<storage, read_write> instanceBoxesOffsets: array<u32>;
 
 
-//aaaa the workgroup size is key in compute shaders
+
 @compute @workgroup_size(1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let geometryIndex = global_id.x;
-    // Compute and store bounds for each unique geometry
-    let instanceIndex = global_id.x;
-    
-    // Initialize bounding box with extreme values
-    // We use vec4f to match our Boundbox structure, setting w to 1.0
-    var boundingBox: Boundbox;
-    boundingBox.min = vec4f(88888888888888888.0, 88888888888888888.0, 88888888888888888, 1.0);
-    boundingBox.max = vec4f(-88888888888888888.0, -88888888888888888.0, -88888888888888888.0, 1.0);
-    
-    // Let's say each instance has these values (you'll need to provide these)
-    let startIndex = instanceIndex * 3u;  // Assuming triangles, 3 indices per triangle
-    let indexCount = 3u;  // For now, just process one triangle per instance
-    
-    // Process each vertex of this instance's geometry
-    for (var i = 0u; i < indexCount; i = i + 1u) {
-        // Get the vertex index from the index buffer
-        let vertexIndex = indexBuffer[startIndex + i];
-        
-        // Get the vertex position
-        let vertexPos = vertexBuffer[vertexIndex].position;
-        
-        // Update min and max for each dimension
-        boundingBox.min.x = min(boundingBox.min.x, vertexPos.x);
-        boundingBox.min.y = min(boundingBox.min.y, vertexPos.y);
-        boundingBox.min.z = min(boundingBox.min.z, vertexPos.z);
+    let instanceGroupDrawCommand = drawCommands[global_id.x];
 
-        boundingBox.max.x = max(boundingBox.max.x, vertexPos.x);
-        boundingBox.max.y = max(boundingBox.max.y, vertexPos.y);
-        boundingBox.max.z = max(boundingBox.max.z, vertexPos.z);
+    let instanceGroupIndex = global_id.x;
+    
+    //TODO: Find proper way to set extreme values
+    var boundingBox: Boundbox;
+    boundingBox.min = vec4f(88888888888888888.0, 88888888888888888.0, 88888888888888888.0, 1.0);
+    boundingBox.max = vec4f(-88888888888888888.0, -88888888888888888.0, -88888888888888888.0, 1.0);
+
+    let startIndex = instanceGroupDrawCommand.firstIndex;
+    let indexCount = instanceGroupDrawCommand.indexCount;
+    let baseVertex = instanceGroupDrawCommand.baseVertex;
+
+    let instanceCount = instanceGroupDrawCommand.instanceCount;
+    //var accOffset = 0u;
+
+   // if instanceGroupIndex != 0 {
+
+    //    accOffset = instanceBoxesOffsets[instanceGroupIndex - 1u];
+   // }
+
+   // for (var e = 0u; e < instanceCount; e = e + 1u) {
+
+    for (var i = 0u; i < indexCount; i = i + 1u) {
+        let vertexIndex = indexBuffer[startIndex + i];
+        let vertexBufferOffset = baseVertex + vertexIndex;
+        boundingBox.min.x = min(boundingBox.min.x, vertexBuffer[vertexBufferOffset].a);
+        boundingBox.min.y = min(boundingBox.min.y, vertexBuffer[vertexBufferOffset].b);
+        boundingBox.min.z = min(boundingBox.min.z, vertexBuffer[vertexBufferOffset].c);
+
+        boundingBox.max.x = max(boundingBox.max.x, vertexBuffer[vertexBufferOffset].a);
+        boundingBox.max.y = max(boundingBox.max.y, vertexBuffer[vertexBufferOffset].b);
+        boundingBox.max.z = max(boundingBox.max.z, vertexBuffer[vertexBufferOffset].c);
+        //boundingBox.min.x = min(boundingBox.min.x, vertexBuffer[vertexBufferOffset].a);
+        //boundingBox.min.y = min(boundingBox.min.y, vertexBuffer[vertexBufferOffset].b);
+        //boundingBox.min.z = min(boundingBox.min.z, vertexBuffer[vertexBufferOffset].c);
+
+        //boundingBox.max.x = max(boundingBox.max.x, vertexBuffer[vertexBufferOffset].a);
+        //boundingBox.max.y = max(boundingBox.max.y, vertexBuffer[vertexBufferOffset].b);
+        //boundingBox.max.z = max(boundingBox.max.z, vertexBuffer[vertexBufferOffset].c);
     }
-    //boundingBox.min.x = f32(global_id.x);
-    // Store the computed bounding box for this instance
-    instnacesBoundboxes[instanceIndex] = boundingBox;
+
+   // instnacesBoundboxes[accOffset + e] = boundingBox;
+    instnacesBoundboxes[instanceGroupIndex] = boundingBox;
+   // }
+
+    //instanceBoxesOffsets[instanceGroupIndex] = accOffset + instanceCount;
 }

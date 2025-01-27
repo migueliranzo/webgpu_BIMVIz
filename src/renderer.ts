@@ -4,6 +4,7 @@ import mainPassShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw'
 import computeBoundingCode from './shaders/COMPUTE_VERTEX.wgsl?raw'
 import computeOcclusionCode from './shaders/COMPUTE_OCCLUSION.wgsl?raw'
 import computeHizMipMapsCode from './shaders/COMPUTE_HIZ_MIPMAPS.wgsl?raw'
+import testBoundingBoxesCode from './shaders/PASS_BOUNDINGBOXES.wgsl?raw'
 import { cubeVertexData, } from './geometry/cube.ts';
 import { getMVPMatrix, getProjectionMatrix, getViewMatrix, getWorldMatrix } from './math_utils.ts';
 import { createInputHandler } from './deps/input.ts';
@@ -60,6 +61,10 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     code: mainPassShaderCode
   })
 
+  const testBoundingBoxesModule = device.createShaderModule({
+    code: testBoundingBoxesCode
+  })
+
   context.configure({
     device: device,
     format: navigator.gpu.getPreferredCanvasFormat(),
@@ -84,9 +89,9 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
   })
 
   const filteredDrawIndirectCommandBuffer = device.createBuffer({
-    size: (loadedModel.size * 5) * 4,
+    size: (instancesCountLd * 5) * 4, //Revert back to loadmodel.size if at all, we went with instance count to use this buffer for testing
     usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    label: 'drawCommandBuffer'
+    label: 'filteredDrawCommandBuffer'
   })
 
   const mouseCoordsBuffer = device.createBuffer({
@@ -101,7 +106,7 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
 
   const computeBindingBoxesOutputBuffer = device.createBuffer({
     size: instancesCountLd * (VEC4_SIZE + VEC4_SIZE), //box.min box.max xyz(w/p)
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
   })
 
   const viewProjectionMatrixBuffer = device.createBuffer({
@@ -140,15 +145,21 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
   })
 
   const gBufferInstanceOffsetBuffer = device.createBuffer({
-    size: ALIGNED_SIZE * loadedModel.size, //Couldnt this be smaller? is over 128?
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    size: ALIGNED_SIZE * loadedModel.size, //Couldnt this be smaller? is over 128? -> Thing is Dynamic offsets have to be 256 aligned 
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
     label: 'gBufferInstanceOffsetBuffer'
   })
 
+  //awful naming btw, just do instanceUniforms, rm constant
   const gBufferInstnaceConstantsBuffer = device.createBuffer({
     size: instancesCountLd * (ALIGNED_SIZE / 2),
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     label: 'gBufferInstnaceConstantsBuffer'
+  })
+
+  const testBoundingBoxOffsetsBuffer = device.createBuffer({
+    size: loadedModel.size * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
   })
 
   const gBufferMeshUniformBuffer = device.createBuffer({
@@ -217,6 +228,11 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       binding: 1,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: 'read-only-storage' }
+    },
+    {
+      binding: 2,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'read-only-storage' }
     }
     ],
     label: 'gBufferConstantsBindGroupLayout'
@@ -251,6 +267,26 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       buffer: { type: 'read-only-storage' }
     }
     ]
+  })
+
+  const testBoundingBoxesBindGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'uniform', minBindingSize: MAT4_SIZE + MAT4_SIZE }
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'read-only-storage' }
+    },
+    {
+      binding: 2,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'read-only-storage' }
+    },
+    ],
+    label: 'testBoundingBoxesBindGroupLayout'
   })
 
 
@@ -348,10 +384,45 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       buffer: {
         type: 'read-only-storage',
       },
+    },
+    {
+      binding: 3,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'read-only-storage',
+      },
+    },
+    {
+      binding: 4,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: 'uniform', minBindingSize: MAT4_SIZE + MAT4_SIZE }
+    },
+    {
+      binding: 5,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'read-only-storage'
+      }
+    },
+    {
+      binding: 6,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'storage'
+      }
     }
     ]
   })
 
+  const viewProBindingGroupLayout = device.createBindGroupLayout({
+    entries: [{
+      binding: 0,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: {
+        type: 'uniform'
+      }
+    }]
+  })
 
   const computeOcclusionBindingGroupLayout = device.createBindGroupLayout({
     entries: [{
@@ -371,14 +442,12 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     {
       binding: 2,
       visibility: GPUShaderStage.COMPUTE,
-      buffer: {
-        type: 'uniform',
-      },
+      texture: { sampleType: 'unfilterable-float' }
     },
     {
       binding: 3,
       visibility: GPUShaderStage.COMPUTE,
-      texture: { sampleType: 'unfilterable-float' }
+      buffer: { type: 'storage' }
     },
     {
       binding: 4,
@@ -388,7 +457,9 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     {
       binding: 5,
       visibility: GPUShaderStage.COMPUTE,
-      buffer: { type: 'storage' }
+      buffer: {
+        type: 'storage'
+      }
     }
     ]
   })
@@ -409,6 +480,7 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       storageTexture: {
         access: 'write-only',
         format: 'r32float',
+        //format: 'rgba16float',
         viewDimension: '2d'
       }
     },
@@ -428,6 +500,7 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       visibility: GPUShaderStage.COMPUTE,
       storageTexture: {
         access: 'write-only',
+        //format: 'rgba16float'
         format: 'r32float'
       }
     }
@@ -448,9 +521,43 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     {
       binding: 1,
       resource: {
-        buffer: computeBindingBoxesOutputBuffer,
+        buffer: filteredDrawIndirectCommandBuffer,
+      }
+    },
+    {
+      binding: 2,
+      resource: {
+        buffer: gBufferInstanceOffsetBuffer,
+        offset: 256
+        //size: ALIGNED_SIZE,
       }
     }
+    ]
+  });
+
+
+  const testBoundingBoxesBindGroup = device.createBindGroup({
+    layout: testBoundingBoxesBindGroupLayout,
+    entries: [{
+      binding: 0,
+      resource: {
+        buffer: gBufferConstantsUniform,
+        size: MAT4_SIZE + MAT4_SIZE,
+        offset: 0
+      }
+    },
+    {
+      binding: 1,
+      resource: {
+        buffer: computeBindingBoxesOutputBuffer,
+      }
+    },
+    {
+      binding: 2,
+      resource: {
+        buffer: gBufferInstnaceConstantsBuffer,
+      }
+    },
     ]
   });
 
@@ -492,7 +599,6 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     }
     ]
   })
-
 
   const mainPassBindgroup = device.createBindGroup({
     layout: mainPassBindgroupLayout,
@@ -548,7 +654,7 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       {
         binding: 1,
         resource: {
-          buffer: ifcModelVertexBuffer
+          buffer: ifcModelVertexBuffer,
         }
       },
       {
@@ -557,9 +663,45 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
           buffer: ifcModelIndexBuffer
         }
       },
+      {
+        binding: 3,
+        resource: {
+          buffer: gBufferInstnaceConstantsBuffer
+        }
+      },
+      {
+        binding: 4,
+        resource: {
+          buffer: gBufferConstantsUniform
+        }
+      },
+      {
+        binding: 5,
+        resource: {
+          buffer: drawIndirectCommandBuffer
+        }
+      },
+      {
+        binding: 6,
+        resource: {
+          buffer: testBoundingBoxOffsetsBuffer,
+        }
+      }
+
     ],
   });
 
+  const viewProBindingGroup = device.createBindGroup({
+    layout: viewProBindingGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: viewProjectionMatrixBuffer,
+        }
+      }
+    ]
+  })
 
   const computeOcclusionBindingGroup = device.createBindGroup({
     layout: computeOcclusionBindingGroupLayout,
@@ -578,24 +720,24 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       },
       {
         binding: 2,
-        resource: {
-          buffer: viewProjectionMatrixBuffer
-        }
-      },
-      {
-        binding: 3,
         resource: hizMipMapsTexture.createView()
       },
       {
-        binding: 4,
+        binding: 3,
         resource: {
           buffer: filteredDrawIndirectCommandBuffer
         }
       },
       {
-        binding: 5,
+        binding: 4,
         resource: {
           buffer: gBufferInstnaceConstantsBuffer
+        }
+      },
+      {
+        binding: 5,
+        resource: {
+          buffer: gBufferInstanceOffsetBuffer,
         }
       }
     ],
@@ -620,6 +762,29 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
       })
     }
     return device.createRenderPipeline(mainPassPipelineLayout)
+  }();
+
+
+  const testBoundingBoxesPipeline = function() {
+    const testBoundingBoxesPipelineLayout: GPURenderPipelineDescriptor = {
+      vertex: {
+        module: testBoundingBoxesModule,
+        entryPoint: 'vertex_main',
+      },
+      fragment: {
+        module: testBoundingBoxesModule,
+        entryPoint: 'fragment_main',
+        targets: [
+          { format: navigator.gpu.getPreferredCanvasFormat() }],
+      },
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [testBoundingBoxesBindGroupLayout],
+      }),
+      primitive: {
+        topology: 'line-list'
+      }
+    }
+    return device.createRenderPipeline(testBoundingBoxesPipelineLayout)
   }();
 
   const gBufferPipeline = function() {
@@ -697,10 +862,12 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     return computePipeline;
   }();
 
+
+
   const computeOcclusionPipeline = function() {
     const computePipeline = device.createComputePipeline({
       layout: device.createPipelineLayout({
-        bindGroupLayouts: [computeOcclusionBindingGroupLayout],
+        bindGroupLayouts: [computeOcclusionBindingGroupLayout, viewProBindingGroupLayout],
       }),
       compute: {
         module: computeOcclusionModule,
@@ -742,7 +909,7 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
   const mainPassDescriptor: GPURenderPassDescriptor = {
     colorAttachments: [{
       clearValue: clearColor,
-      loadOp: 'clear',
+      loadOp: 'load',
       storeOp: 'store',
       view: context.getCurrentTexture().createView()
     }]
@@ -809,6 +976,7 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     commandArray[testI + 3] = _offsetGeo//base vertex? was _offsetGeo
     commandArray[testI + 4] = 0;  //first instance? was firstInstanceOffset
 
+    //Why are we saving this as a vec4, its literally just a number, fix
     instanceUniformOffsetDataArray.set(Float32Array.of(firstInstanceOffset, 0, 0, 0), instanceGroupI * (ALIGNED_SIZE / 4));
     vertexDataArray.set(instanceGroup.baseGeometry.vertexArray, _offsetGeoBytes / 4);
     indexDataArray.set(instanceGroup.baseGeometry.indexArray, _offsetIndexBytes / 4);
@@ -885,6 +1053,32 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
   const fpsElem = document.querySelector("#fps")!;
   let frameCount = 0;
 
+  const boundingBoxTestData = new Float32Array([
+    -5, 0, -5, 1,
+    5, 1, 5, 1,
+    -4.5, 0, -4.5, 1,
+    -4, 5, -4, 1,
+    4, 0, -4.5, 1,
+    4.5, 5, -4, 1,
+    -4.5, 0, 4, 1,
+    -4, 5, 4.5, 1,
+    4, 0, 4, 1,
+    4.5, 5, 4.5, 1,
+    -1, 3, -1, 1,
+    1, 4, 1, 1,
+    -0.5, 6, -0.5, 1,
+    0.5, 6.5, 0.5, 1,
+    1, 6, -0.5, 1,
+    2, 6.5, 0.5, 1,
+    2.5, 6, -0.5, 1,
+    3.5, 6.5, 0.5, 1,
+    3.5, 5.75, -0.75, 1,
+    4.5, 6.75, 0.75, 1,
+  ])
+
+  //Okay so we do project boxes, that works, we also can transform them, that works...
+  //Next test case would be... lets output the same box for every object and see if they get properly placed and transformed, 
+  //if we see our model with bounding boxes each representing the center of an object where we would expect them to see we can conclude the issue is we just generate faulty boxes
 
   async function render() {
     frameCount++;
@@ -897,81 +1091,87 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
 
 
-    //TODO: Testing ofc remove this form loop
-    //const tempEncoderPass = device.createCommandEncoder()
-    //const tempEncoder = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
-    //tempEncoder.setPipeline(computeBoundingBoxesPipeline);
-    //tempEncoder.setBindGroup(0, computeBoundingBoxesBindGroup)
-    //tempEncoder.dispatchWorkgroups(instancesCountLd);
-    //tempEncoder.end();
-    //okay chec ck how to genreate hizmap and how to use occlusin queryis if needed
-
-    //if (frameCount < 100) {
-    //  console.log("GOOO")
-    ////TODO: And this stays indeed, is how we test for what to occlude every frame...
-    //const tempEncoder2 = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
-    //tempEncoder2.setPipeline(computeOcclusionPipeline);
-    //tempEncoder2.setBindGroup(0, computeOcclusionBindingGroup)
-    //device.queue.writeBuffer(viewProjectionMatrixBuffer, 0, new Float32Array([...cameraMatrix, ...proMat]))
-    //tempEncoder2.dispatchWorkgroups(instancesCountLd);
-    //tempEncoder2.end();
-    //
-    ////}
-    //const tempEncoderDepthToFloat = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
-    //tempEncoderDepthToFloat.setPipeline(computeDepthToFloatPipeline);
-    //let computeDepthToFloatBindGroup = device.createBindGroup({
-    //  layout: computeDepthToFloatBindGroupLayout,
-    //  entries: [{
-    //    binding: 0,
-    //    resource: depthTexture.createView()
-    //  },
-    //  {
-    //    binding: 1,
-    //    resource: hizMipMapsTexture.createView({ baseMipLevel: 0, mipLevelCount: 1 })
-    //  }
-    //  ]
-    //})
-    //tempEncoderDepthToFloat.setBindGroup(0, computeDepthToFloatBindGroup);
-    //tempEncoderDepthToFloat.dispatchWorkgroups(canvasW, canvasH);
-    //tempEncoderDepthToFloat.end();
-    //
-    //const tempEncoder3 = tempEncoderPass.beginComputePass(ifcModelPassDescriptor);
-    //tempEncoder3.setPipeline(computeHizMipMapsPipeline);
-    //
-    ////First layer test
-    //let workgroupSizePerDim = 8; //compute workgroup size (8,8)
-    //for (let i = 1; i < numMipLevels; i++) {
-    //  let invocationCountX = maxPowerOf2SizeW / (2 * i);
-    //  let invocationCountY = maxPowerOf2SizeH / (2 * i);
-    //  let workgroupCountX = (invocationCountX + workgroupSizePerDim - 1) / workgroupSizePerDim;
-    //  let workgroupCountY = (invocationCountY + workgroupSizePerDim - 1) / workgroupSizePerDim;
-    //  let computeHizMipMapsBindingGroup = device.createBindGroup({
-    //    layout: computeHizMipMapsBindingGroupLayout,
-    //    entries: [{
-    //      binding: 0,
-    //      resource: hizMipMapsTexture.createView({ baseMipLevel: i - 1, mipLevelCount: 1 })
-    //    },
-    //    {
-    //      binding: 1,
-    //      resource: hizMipMapsTexture.createView({ baseMipLevel: i, mipLevelCount: 1 })
-    //    },
-    //    ]
-    //  });
-    //  tempEncoder3.setBindGroup(0, computeHizMipMapsBindingGroup);
-    //  tempEncoder3.dispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
-    //}
-    //
-    //tempEncoder3.end();
-    //device.queue.submit([tempEncoderPass.finish()]);
-
-
     let canvasView = context.getCurrentTexture().createView();
     mainPassDescriptor.colorAttachments[0].view = canvasView;
+
+    //Bounding box calculation
+    //TODO: Testing ofc remove this form loop
+    const tempEncoderPass = device.createCommandEncoder()
+    const tempEncoder = tempEncoderPass.beginComputePass();
+    tempEncoder.setPipeline(computeBoundingBoxesPipeline);
+    tempEncoder.setBindGroup(0, computeBoundingBoxesBindGroup)
+    tempEncoder.dispatchWorkgroups(loadedModel.size);
+    tempEncoder.end();
+
+
+
+    //Copy depth texture to mipmap level 0
+    const tempEncoderDepthToFloat = tempEncoderPass.beginComputePass();
+    tempEncoderDepthToFloat.setPipeline(computeDepthToFloatPipeline);
+    //Constantly creating Bindgroups?
+    let computeDepthToFloatBindGroup = device.createBindGroup({
+      layout: computeDepthToFloatBindGroupLayout,
+      entries: [{
+        binding: 0,
+        resource: depthTexture.createView()
+      },
+      {
+        binding: 1,
+        resource: hizMipMapsTexture.createView({ baseMipLevel: 0, mipLevelCount: 1 })
+      }
+      ]
+    })
+    tempEncoderDepthToFloat.setBindGroup(0, computeDepthToFloatBindGroup);
+    tempEncoderDepthToFloat.dispatchWorkgroups(canvasW, canvasH);
+    tempEncoderDepthToFloat.end();
+
+
+    //HI-Z creation -- for testing we dont really need it now since we are only testing the first level, and we also want to make this more blocky remember 
+    const tempEncoder3 = tempEncoderPass.beginComputePass();
+    tempEncoder3.setPipeline(computeHizMipMapsPipeline);
+
+    let workgroupSizePerDim = 8; //compute workgroup size (8,8)
+    for (let i = 1; i < numMipLevels; i++) {
+      let invocationCountX = maxPowerOf2SizeW / (2 * i);
+      let invocationCountY = maxPowerOf2SizeH / (2 * i);
+      let workgroupCountX = (invocationCountX + workgroupSizePerDim - 1) / workgroupSizePerDim;
+      let workgroupCountY = (invocationCountY + workgroupSizePerDim - 1) / workgroupSizePerDim;
+      //Constantly creating Bindgroups?
+      let computeHizMipMapsBindingGroup = device.createBindGroup({
+        layout: computeHizMipMapsBindingGroupLayout,
+        entries: [{
+          binding: 0,
+          resource: hizMipMapsTexture.createView({ baseMipLevel: i - 1, mipLevelCount: 1 })
+        },
+        {
+          binding: 1,
+          resource: hizMipMapsTexture.createView({ baseMipLevel: i, mipLevelCount: 1 })
+        },
+        ]
+      });
+      tempEncoder3.setBindGroup(0, computeHizMipMapsBindingGroup);
+      tempEncoder3.dispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
+    }
+
+    tempEncoder3.end();
+
+    //if (frameCount < 500) {
+    //console.log("GOOO")
+    const tempEncoder2 = tempEncoderPass.beginComputePass();
+    tempEncoder2.setPipeline(computeOcclusionPipeline);
+    tempEncoder2.setBindGroup(0, computeOcclusionBindingGroup)
+    device.queue.writeBuffer(viewProjectionMatrixBuffer, 0, new Float32Array([...cameraMatrix, ...proMat]))
+    tempEncoder2.setBindGroup(1, viewProBindingGroup);
+    tempEncoder2.dispatchWorkgroups(loadedModel.size);
+    tempEncoder2.end();
+    //}
+
+
+    device.queue.submit([tempEncoderPass.finish()]);
 
     const gBufferPassEncoder = commandEnconder.beginRenderPass(ifcModelPassDescriptor);
     gBufferPassEncoder.setPipeline(gBufferPipeline);
     let _dynamicOffset = 0;
-    device.queue.writeBuffer(gBufferConstantsUniform, 0, cameraMatrix);
 
     gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, 0);
     gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', 0);
@@ -1012,6 +1212,22 @@ export async function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loa
     )
 
     device.queue.submit([commandEnconder.finish()]);
+
+
+    //const testBoundingBoxEncoder = device.createCommandEncoder();
+    //const testBoundingBoxPass = testBoundingBoxEncoder.beginRenderPass(mainPassDescriptor);
+    //testBoundingBoxPass.setPipeline(testBoundingBoxesPipeline);
+
+    device.queue.writeBuffer(gBufferConstantsUniform, 0, cameraMatrix);
+    //testBoundingBoxPass.setBindGroup(0, testBoundingBoxesBindGroup);
+    //
+    ////Test case
+    ////device.queue.writeBuffer(computeBindingBoxesOutputBuffer, 0, boundingBoxTestData)
+    //
+    //testBoundingBoxPass.draw(24, instancesCountLd);
+    //testBoundingBoxPass.end();
+    //
+    //device.queue.submit([testBoundingBoxEncoder.finish()]);
 
     await computeSelectedIdStagingBuffer.mapAsync(
       GPUMapMode.READ,

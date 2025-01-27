@@ -30,7 +30,7 @@ async function init() {
   const fileBufferArch = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Arch.ifc').then((fileResponse) => fileResponse.arrayBuffer());
   const fileUint8Buffer = new Uint8Array(fileBuffer);
   const fileUint8BufferArch = new Uint8Array(fileBufferArch);
-  const filesToParse = [fileUint8Buffer, fileUint8BufferArch];
+  const filesToParse = [fileUint8BufferArch];
 
   const start = ms();
 
