@@ -692,6 +692,10 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         }
       }
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
+
+      multiTypeMeshesLiveTypes.forEach((liveType) => {
+        device.queue.writeBuffer(gBufferMeshUniformBuffer, (liveType.multiTypeMeshOffset * 4), Uint32Array.of(liveType.value));
+      })
     })
 
     meshGroupServiceHandler.treeListHoverOnChange((hoveredMeshesIdSet: Set<number>) => {
