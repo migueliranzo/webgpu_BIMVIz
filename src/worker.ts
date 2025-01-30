@@ -1,4 +1,4 @@
-import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS, IFCCABLESEGMENTTYPE, IFCRELDEFINESBYTYPE, IFCPIPESEGMENTTYPE, IFCPIPEFITTINGTYPE, IFCDUCTSEGMENT, IFCDUCTSEGMENTTYPE } from 'web-ifc';
+import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS, IFCCABLESEGMENTTYPE, IFCRELDEFINESBYTYPE, IFCPIPESEGMENTTYPE, IFCPIPEFITTINGTYPE, IFCDUCTSEGMENT, IFCDUCTSEGMENTTYPE, IFCENERGYCONVERSIONDEVICETYPE, IFCENERGYCONVERSIONDEVICE, IFCCABLESEGMENT, IFCFLOWMOVINGDEVICETYPE, IFCFLOWMOVINGDEVICE, IFCFLOWTERMINAL, IFCFLOWTERMINALTYPE } from 'web-ifc';
 
 export interface parsedIfcObject {
   geometries: parsedGeometryData[],
@@ -87,8 +87,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           flatTransform: processedGeometry.flatTransform,
         });
       })
-      //still not working
-      //mesh.delete()
       lookUpId++;
     });
 
@@ -133,10 +131,11 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     console.log(itemPropertiesMap)
     postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap, typesList });
 
-    //Pipe grouping -- Make grouping function probably
     const cableSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
     const pipeSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPESEGMENTTYPE)
     const pipeFittingTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPEFITTINGTYPE)
+    const energyConversionLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCENERGYCONVERSIONDEVICE);
+    const flowTerminalsLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCFLOWTERMINAL);
     const defineByTypeLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCRELDEFINESBYTYPE);
     const pipeSegmentsLineObjects = [];
     const electricalSegmentsLineObjects = [];
@@ -154,23 +153,51 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       pipeSegmentsLineObjects.push(pipeSegmentTypeLineObject.expressID)
     }
 
+
+    //TODO: consolidate the revit mech function
+    for (let flowTerminalLineId of flowTerminalsLineIds) {
+      let flowTerminalLineObject = ifcAPI.GetLine(modelID, flowTerminalLineId);
+      let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, flowTerminalLineObject.expressID);
+      let itemPropertiesSet = pipeObjectPropertySets.find((propertySet) => propertySet.Name.value == 'PSet_Revit_Mechanical');
+      itemPropertiesSet?.HasProperties.forEach((x) => {
+        let revitVal = ifcAPI.GetLine(modelID, x.value);
+        if (revitVal.Name.value == 'System Type') {
+          meshTypeIdMap.set(flowTerminalLineObject.expressID, revitVal.NominalValue.value);
+          return
+        }
+      })
+    }
+
+    //TODO: Not even type Id reomve the type
+    for (let energyConversionTypesLineId of energyConversionLineIds) {
+      let energyConversionTypesLineObject = ifcAPI.GetLine(modelID, energyConversionTypesLineId);
+      let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, energyConversionTypesLineObject.expressID);
+      let itemPropertiesSet = pipeObjectPropertySets.find((propertySet) => propertySet.Name.value == 'PSet_Revit_Mechanical');
+      itemPropertiesSet.HasProperties.forEach((x) => {
+        let revitVal = ifcAPI.GetLine(modelID, x.value);
+        if (revitVal.Name.value == 'System Type') {
+          meshTypeIdMap.set(energyConversionTypesLineObject.expressID, revitVal.NominalValue.value);
+          return
+        }
+      })
+    }
+
     for (let cableSegmentTypeLineId of cableSegmentsTypesLineIds) {
       let cableObject = ifcAPI.GetLine(modelID, cableSegmentTypeLineId);
       electricalSegmentsLineObjects.push(cableObject.expressID)
     }
 
-    //const revitTypes = new Map();
-    //revitTypes.set("Electrical", { objects: [] })
-    const revitTypesInversed = new Map();
+
+    //TODO: cleanup colors as well
     const pipeTypeColor = [[.9, .9, 0.], [.9, 0, 0], [0.5, 0.5, 0.5], [0.5, 0.5, 0.2], [0., 0., .9], [.9, 0., .9], [0.3, 1.0, 0.1]]
 
     for (let defineByTypeLineId of defineByTypeLineIds) {
-      let defineByTypeLineObject = ifcAPI.GetLine(modelID, defineByTypeLineId);
-      let relatingTypeId = defineByTypeLineObject.RelatingType.value;
+      const defineByTypeLineObject = ifcAPI.GetLine(modelID, defineByTypeLineId);
+      const relatingTypeId = defineByTypeLineObject.RelatingType.value;
+
       if (electricalSegmentsLineObjects.includes(relatingTypeId)) {
         for (let object of defineByTypeLineObject.RelatedObjects) {
           let pipeObject = ifcAPI.GetLine(modelID, object.value);
-          revitTypesInversed.set(pipeObject.expressID, 'Electrical');
           meshTypeIdMap.set(pipeObject.expressID, 'Electrical');
           if (!typesIdStateMap.has('Electrical')) {
             typesIdStateMap.set('Electrical', { typeId: typesIdStateMap.size, stringType: 'Electrical', state: 0, color: pipeTypeColor[typesIdStateMap.size] })
@@ -186,7 +213,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           itemPropertiesSet.HasProperties.forEach((x) => {
             let revitVal = ifcAPI.GetLine(modelID, x.value);
             if (revitVal.Name.value == 'System Type') {
-              revitTypesInversed.set(pipeObject.expressID, revitVal.NominalValue.value);
               meshTypeIdMap.set(pipeObject.expressID, revitVal.NominalValue.value);
               if (!typesIdStateMap.has(revitVal.NominalValue.value)) {
                 typesIdStateMap.set(revitVal.NominalValue.value, { typeId: typesIdStateMap.size, stringType: revitVal.NominalValue.value, state: 0, color: pipeTypeColor[typesIdStateMap.size] })
@@ -208,9 +234,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     }
 
     const modelTreeStructure = mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true));
-
     //Just adding everything here for now, surely it wont become a problem later -> it did.
-    const generalProperties = { revitTypesInversed, instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };
+    const generalProperties = { instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
   }
 

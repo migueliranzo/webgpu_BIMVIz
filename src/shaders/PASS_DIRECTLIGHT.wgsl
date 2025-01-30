@@ -8,28 +8,34 @@ fn vertex_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) ve
     return vec4f(vertexArray[vertexIndex], 0.0, 1.0);
 }
 
-@group(0) @binding(0) var positionTexture: texture_2d<f32>;
+@group(0) @binding(0) var hightlightsTexture: texture_2d<f32>;
 @group(0) @binding(1) var normalTexture: texture_2d<f32>;
 @group(0) @binding(2) var albedoTexture: texture_2d<f32>;
 @group(0) @binding(3) var idTexture: texture_2d<u32>;
-@group(0) @binding(4) var<storage> selectedID: array<f32>;
 
 @fragment
 fn fragment_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let textCoord = position.xy / vec2<f32>(textureDimensions(positionTexture));
-    let positionTexture = textureLoad(positionTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(positionTexture))), 0).xyz;
+    let textCoord = position.xy / vec2<f32>(textureDimensions(hightlightsTexture));
+    let hightlightsTexture = textureLoad(hightlightsTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(hightlightsTexture))), 0).xyzw;
     let normalTexture = normalize(textureLoad(normalTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(normalTexture))), 0).xyz);//keep an eye on this normalization
     let albedoTexture = textureLoad(albedoTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(albedoTexture))), 0).xyzw;
     let idTexture = textureLoad(idTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(idTexture))), 0).x;
+
+    var outputcolor = albedoTexture;
 
     var highlight = vec4f(0.);
     //if hoverStates[idTexture] > 0. {
     //    highlight = vec3f(1.0);
    // }
 
-    if selectedID[0] == f32(idTexture) && selectedID[0] != 0 {
-        highlight = vec4f(vec3f(1.0), 0.);
+//    if selectedID[0] == f32(idTexture) && selectedID[0] != 0 {
+ //       highlight = vec4f(vec3f(1.0), 0.);
+ //   }
+
+    if hightlightsTexture.w != 0 {
+ //       outputcolor = vec4f(1., 0., 1.0, .7);
+        outputcolor = hightlightsTexture;
     }
 
-    return vec4f(albedoTexture + highlight);
+    return vec4f(outputcolor + highlight);
 }

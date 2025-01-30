@@ -1,6 +1,6 @@
 import { OrbitCamera } from "./deps/camera";
 
-function createLocalEventEmitter() {
+function createLocalEventEmitter(eventName: string) {
   // Using a DOM Event Target gives us a built-in event system
   const eventTarget = new EventTarget();
 
@@ -12,24 +12,27 @@ function createLocalEventEmitter() {
 
   return {
     emit(value) {
-      // Create a new event with our value
-      const event = new CustomEvent('change', { detail: value });
+      const event = new CustomEvent(eventName, { detail: value });
       eventTarget.dispatchEvent(event);
     },
 
     subscribe(callback) {
       const handler = (e) => callback(e.detail);
-      eventTarget.addEventListener('change', handler);
-      // Return unsubscribe function to clean up
-      return () => eventTarget.removeEventListener('change', handler);
+      eventTarget.addEventListener(eventName, handler);
+      return () => eventTarget.removeEventListener(eventName, handler);
     }
   };
 }
 
 export function createActionsHandler() {
-  const events = createLocalEventEmitter();
+  const events = createLocalEventEmitter('change');
+  const mepSystemChangeEvent = createLocalEventEmitter('mep');
   const viewModes = ['setFrontView', 'setRightView', 'setTopView', 'setLeftView', 'setBackView', 'setBottomView'];
+  const mepSystems = ['0', '1', '2', '3', '4', '5']
   const viewBtn = {
+    clickCount: 0,
+  }
+  const mepBtn = {
     clickCount: 0,
   }
 
@@ -37,8 +40,15 @@ export function createActionsHandler() {
 
   const createLeftActions = function(camera: OrbitCamera) {
     document.getElementById('changeViewBtn')!.addEventListener(('click'), (e) => {
+      e.stopPropagation()
       camera[viewModes[viewBtn.clickCount++ % viewModes.length]]();
     })
+
+    document.getElementById('changeMepModule')!.addEventListener(('click'), (e) => {
+      e.stopPropagation()
+      mepSystemChangeEvent.emit(mepBtn.clickCount++ % mepSystems.length)
+    })
+
   }
 
   const updateSelectedId = function(id: number) {
@@ -59,7 +69,8 @@ export function createActionsHandler() {
     updateSelectedId,
     getSelectedId,
     createLeftActions,
-    onChange: events.subscribe
+    onChange: events.subscribe, //TODO: For code refactoring unite events on a service prob,
+    onMepSystemChange: mepSystemChangeEvent.subscribe,
   };
 
 }
