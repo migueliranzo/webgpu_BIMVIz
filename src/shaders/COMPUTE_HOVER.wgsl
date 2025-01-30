@@ -5,6 +5,8 @@
 @group(0) @binding(3) var<storage, read_write> selectedObject: vec4<f32>;
 
 
+//TODO: I honestly dont remember whats the deal with hoverStates since we only use selectedObject, it was the first compute shader and like in the first week into this
+//Like why do we even save the ID as float that makes so little sense, anywho running out of time cant fix everything, awaaaare the UI not even done 
 @compute @workgroup_size(1)
 fn main() {
     let normalizedMouseCoords = mouseCoords.xy / vec2<f32>(textureDimensions(objectIdTexture));
@@ -15,6 +17,7 @@ fn main() {
     if f32(hoveringObjectID) != hoverStates[arrayLength(&hoverStates)] {
         hoverStates[i32(hoverStates[arrayLength(&hoverStates)])] = 0.;
         hoverStates[arrayLength(&hoverStates)] = f32(hoveringObjectID);
+        selectedObject.z = f32(hoveringObjectID);
     }
 
     if f32(hoveringObjectID) > 0. {

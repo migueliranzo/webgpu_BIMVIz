@@ -1,7 +1,6 @@
 import ifcModelShaderCode from './shaders/PASS_LOADMODEL.wgsl?raw';
-import computeForwardCode from './shaders/COMPUTE_HOVER.wgsl?raw'
-import mainPassShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw'
-import { cubeVertexData, } from './geometry/cube.ts';
+import computeForwardCode from './shaders/COMPUTE_HOVER.wgsl?raw';
+import mainPassShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw';
 import { getMVPMatrix, getProjectionMatrix, getViewMatrix, getWorldMatrix } from './math_utils.ts';
 import { createInputHandler } from './deps/input.ts';
 import { OrbitCamera } from './deps/camera.ts';
@@ -15,19 +14,12 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   const VEC4_SIZE = 4 * 4;
   const VEC3_SIZE = 4 * 3;
   const VEC2_SIZE = 4 * 2;
+  const MESHTYPEUNDEFINED = 99;
 
   //Getting the context stuff here for now, not sure where it will go
   const context = canvas.getContext('webgpu')!;
   let canvasW = canvas.width;
   let canvasH = canvas.height;
-
-  const swapChainFormat = navigator.gpu.getPreferredCanvasFormat();
-  const swapChainDescriptor = {
-    device: device,
-    format: swapChainFormat,
-    alphaMode: "premultiplied",
-    usage: GPUTextureUsage.RENDER_ATTACHMENT
-  };
 
   //Camera 
   const cameraSettings = {
@@ -59,9 +51,11 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   })
 
   //we loop here unless we need this data somehwere else as well
+  //TODO: Make them use caps so its clear they are like magic number placeholders
   let verCountLd = 0;
   let indCountLd = 0;
   let instancesCountLd = 0;
+  let instanceGroupCount = loadedModel.size;
   loadedModel.forEach((x) => {
     verCountLd += x.baseGeometry.vertexArray.byteLength;
     indCountLd += x.baseGeometry.indexArray.byteLength;
@@ -71,7 +65,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   //Buffer creation
   const drawIndirectCommandBuffer = device.createBuffer({
     size: (loadedModel.size * 5) * 4,
-    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     label: 'drawCommandBuffer'
   })
 
@@ -114,14 +108,15 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   })
 
   const gBufferInstanceOffsetBuffer = device.createBuffer({
-    size: ALIGNED_SIZE * loadedModel.size, //Couldnt this be smaller? is over 128?
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    size: ALIGNED_SIZE * loadedModel.size,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     label: 'gBufferInstanceOffsetBuffer'
   })
 
+  //TODO: Rename properly, no constants , AND THERE IS ACTUALLY A TIPO LMAOOO
   const gBufferInstnaceConstantsBuffer = device.createBuffer({
     size: instancesCountLd * (ALIGNED_SIZE / 2),
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     label: 'gBufferInstnaceConstantsBuffer'
   })
 
@@ -167,7 +162,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   });
 
 
-
   //Bind groups - layouts
   const gBufferConstantsBindGroupLayout = device.createBindGroupLayout({
     entries: [{
@@ -182,7 +176,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     entries: [{
       binding: 0,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-      buffer: { type: 'uniform', minBindingSize: VEC4_SIZE, hasDynamicOffset: true }
+      buffer: { type: 'uniform', hasDynamicOffset: true }
     }],
     label: 'gBufferInstanceOffsetBindGroupLayout'
   });
@@ -205,7 +199,13 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       binding: 1,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: 'read-only-storage' }
-    }
+    },
+    {
+      binding: 2,
+      visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+      buffer: { type: 'read-only-storage' },
+    },
+
     ]
   })
 
@@ -240,13 +240,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
           sampleType: 'uint',
         },
       },
-      {
-        binding: 4,
-        visibility: GPUShaderStage.FRAGMENT,
-        buffer: {
-          type: 'read-only-storage'
-        }
-      }
     ]
   })
 
@@ -330,6 +323,12 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       resource: {
         buffer: typeStatesBuffer,
       }
+    },
+    {
+      binding: 2,
+      resource: {
+        buffer: computeSelectedIdBuffer
+      },
     }
     ]
   })
@@ -342,7 +341,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       { binding: 1, resource: normalTexture.createView() },
       { binding: 2, resource: albedoTexture.createView() },
       { binding: 3, resource: idTexture.createView() },
-      { binding: 4, resource: { buffer: computeSelectedIdBuffer } },
     ]
   })
 
@@ -388,7 +386,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         entryPoint: 'fragment_main',
         targets: [
           {
-            format: swapChainFormat,
+            format: navigator.gpu.getPreferredCanvasFormat(),
             blend: {
               color: {
                 srcFactor: "src-alpha",
@@ -434,25 +432,38 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       fragment: {
         module: ifcModelshaderModule,
         entryPoint: 'fragment_main',
-        targets: [
-          { format: 'rgba16float' }, // worldPos
-          { format: 'rgba16float' }, // worldNormal
-          {
-            format: 'rgba8unorm',
-            blend: {
-              color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
-                operation: "add",
-              },
-              alpha: {
-                srcFactor: "one",
-                dstFactor: "one-minus-src-alpha",
-                operation: "add",
-              }
+        targets: [{
+          format: 'rgba16float',
+          blend: {
+            color: {
+              srcFactor: 'src-alpha',
+              dstFactor: 'one-minus-src-alpha',
+              operation: 'add',
+            },
+            alpha: {
+              srcFactor: 'one',
+              dstFactor: 'one-minus-src-alpha',
+              operation: 'add',
             }
-          }, // albedo
-          { format: 'r32uint' }, // Ids ,
+          }
+        },
+        { format: 'rgba16float' }, // worldNormal
+        {
+          format: 'rgba8unorm',
+          blend: {
+            color: {
+              srcFactor: "src-alpha",
+              dstFactor: "one-minus-src-alpha",
+              operation: "add",
+            },
+            alpha: {
+              srcFactor: "one",
+              dstFactor: "one-minus-src-alpha",
+              operation: "add",
+            }
+          }
+        }, // albedo
+        { format: 'r32uint' }, // Ids ,
 
         ]
       },
@@ -487,9 +498,8 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     return computePipeline;
   }();
 
-
   //Render passes
-  const clearColor = { r: 1.0, g: 0.5, b: 1.0, a: 0.0 }
+  const clearColor = { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
   const mainPassDescriptor: GPURenderPassDescriptor = {
     colorAttachments: [{
       clearValue: clearColor,
@@ -550,7 +560,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let instanceDataArray = new ArrayBuffer(instancesCountLd * (16 * 4 + 3 * 4 + 1 * 4 + 12 * 4));
   let instanceDataArrayFloatView = new Float32Array(instanceDataArray);
   let instanceDataArrayUintView = new Uint32Array(instanceDataArray);
-  let instanceUniformOffsetDataArray = new Float32Array((loadedModel.size * ALIGNED_SIZE) / 4);
+  let instanceUniformOffsetDataArray = new Uint32Array((loadedModel.size * ALIGNED_SIZE) / 4);
   const meshGroupsIds = new Float32Array(loadedModel.size * MAT4_SIZE);
   let meshLookUpIdOffsetIndex = 0;
   const transparentInstancesGroups = [];
@@ -563,7 +573,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     drawCommandsArray[testI + 3] = _offsetGeo//base vertex? was _offsetGeo
     drawCommandsArray[testI + 4] = 0;  //first instance? was firstInstanceOffset
 
-    instanceUniformOffsetDataArray.set(Float32Array.of(firstInstanceOffset, 0, 0, 0), instanceGroupI * (ALIGNED_SIZE / 4));
+    instanceUniformOffsetDataArray[instanceGroupI * (ALIGNED_SIZE / 4)] = firstInstanceOffset;
     vertexDataArray.set(instanceGroup.baseGeometry.vertexArray, _offsetGeoBytes / 4);
     indexDataArray.set(instanceGroup.baseGeometry.indexArray, _offsetIndexBytes / 4);
     firstInstanceOffset += instanceGroup[instanceType].length;
@@ -611,35 +621,66 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     const meshGroupServiceHandler = getMeshGroupsHandler();
     let fetchedMeshLookUpIdsList = [];
     let fetchedMeshUniformsDataArray = [];
+    const multiTypeMeshes = new Map<any, any>;
+    let multiTypeMeshesLiveTypes = [];
     meshGroupServiceHandler.getMeshGroups().then(({ meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, modelTreeStructure }) => {
       console.log(meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, modelTreeStructure);
       fetchedMeshLookUpIdsList = meshLookUpIdsList;
-      const meshUniformsDataArray = new Uint32Array((4) * meshLookUpIdsList.length);
-      for (let i = 0; i < meshLookUpIdsList.length; i++) {
-        let offset = ((4 * 4) / 4) * i;
-        let stringType = meshTypeIdMap.get(meshLookUpIdsList[i]) ? meshTypeIdMap.get(meshLookUpIdsList[i]) : 'noGroup';
-        meshUniformsDataArray[offset] = meshLookUpIdsList[i];
-        meshUniformsDataArray[offset + 1] = typesIdStateMap.get(stringType) ? typesIdStateMap.get(stringType).typeId : 99;
-        meshUniformsDataArray[offset + 2] = 1;
-        meshUniformsDataArray[offset + 3] = 1;
-      }
 
       const typeStatesDataArray = new Float32Array(typesIdStateMap.size * 4); //uint State + vec3 color for now
       let i = 0;
       typesIdStateMap.forEach((typeIdObject) => {
-        let offset = (i * 4)
+        multiTypeMeshes.set(typeIdObject.stringType, []);
+        const offset = (i * 4)
         typeStatesDataArray.set([...typeIdObject.color], offset);
         typeStatesDataArray.set([typeIdObject.state], offset + 3);
         typesStatesBufferStrides.set(typeIdObject.typeId, { stride: offset * 4, stringType: typeIdObject.stringType })
         i++
       })
+
+      const meshUniformsDataArray = new Uint32Array((4) * meshLookUpIdsList.length);
+      for (let i = 0; i < meshLookUpIdsList.length; i++) {
+        const offset = ((4 * 4) / 4) * i;
+        const meshExpressId = meshLookUpIdsList[i];
+        const meshTypesString = meshTypeIdMap.get(meshExpressId);
+        let meshTypeId = MESHTYPEUNDEFINED;
+
+        if (meshTypesString) {
+          const meshTypesStrings = meshTypeIdMap.get(meshExpressId).split(',');
+          if (meshTypesStrings.length > 1) {
+            for (let typeString of meshTypesStrings) {
+              multiTypeMeshes.get(typeString)?.push(offset + 1);
+            }
+          }
+
+          meshTypeId = typesIdStateMap.get(meshTypesStrings[0]).typeId;
+        }
+
+        meshUniformsDataArray[offset] = meshExpressId;
+        meshUniformsDataArray[offset + 1] = meshTypeId;
+        meshUniformsDataArray[offset + 2] = 1;
+        meshUniformsDataArray[offset + 3] = 1;
+      }
+
+
       fetchedMeshUniformsDataArray = meshUniformsDataArray;
       device.queue.writeBuffer(typeStatesBuffer, 0, typeStatesDataArray)
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, meshUniformsDataArray)
 
-      //So this is how we will do the dynamic toggle of types-> works for pipeTypes for now
-      //let testType = typesStatesBufferStrides.get(1);
-      //device.queue.writeBuffer(typeStatesBuffer, testType.stride + 12, new Float32Array([1]))
+      actionHandler.onMepSystemChange((value) => {
+        let testType = typesStatesBufferStrides.get(value);
+
+        multiTypeMeshesLiveTypes = [];
+        multiTypeMeshes.get(testType.stringType).forEach((multiTypeMeshOffset) => {
+          multiTypeMeshesLiveTypes.push({ multiTypeMeshOffset, value });
+          device.queue.writeBuffer(gBufferMeshUniformBuffer, (multiTypeMeshOffset * 4), Uint32Array.of(value));
+        })
+
+
+        const updatedTypeStatesDataArray = new Float32Array(typeStatesDataArray);
+        updatedTypeStatesDataArray[testType.stride / 4 + 3] = 1;
+        device.queue.writeBuffer(typeStatesBuffer, 0, updatedTypeStatesDataArray)
+      });
     })
 
     meshGroupServiceHandler.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
@@ -651,6 +692,10 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         }
       }
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
+
+      multiTypeMeshesLiveTypes.forEach((liveType) => {
+        device.queue.writeBuffer(gBufferMeshUniformBuffer, (liveType.multiTypeMeshOffset * 4), Uint32Array.of(liveType.value));
+      })
     })
 
     meshGroupServiceHandler.treeListHoverOnChange((hoveredMeshesIdSet: Set<number>) => {
@@ -662,6 +707,10 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         }
       }
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
+
+      multiTypeMeshesLiveTypes.forEach((liveType) => {
+        device.queue.writeBuffer(gBufferMeshUniformBuffer, (liveType.multiTypeMeshOffset * 4), Uint32Array.of(liveType.value));
+      })
     })
 
   }
@@ -690,19 +739,20 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     let canvasView = context.getCurrentTexture().createView();
     mainPassDescriptor.colorAttachments[0].view = canvasView;
 
-    const gBufferPassEncoder = commandEnconder.beginRenderPass(ifcModelPassDescriptor);
-    gBufferPassEncoder.setPipeline(gBufferPipeline);
-    let _dynamicOffset = 0;
     let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
     device.queue.writeBuffer(gBufferConstantsUniform, 0, cameraMatrix);
 
+
+    const gBufferPassEncoder = commandEnconder.beginRenderPass(ifcModelPassDescriptor);
+    gBufferPassEncoder.setPipeline(gBufferPipeline);
+    let _dynamicOffset = 0;
     gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, 0);
     gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', 0);
     gBufferPassEncoder.setBindGroup(0, gBufferConstantsBindGroup);
     gBufferPassEncoder.setBindGroup(1, gBufferInstanceConstantsBindGroup);
     gBufferPassEncoder.setBindGroup(3, gBufferMeshUniformBindGroup);
 
-    let incr = 0;
+    var incr = 0;
     loadedModel.forEach((instanceGroup) => {
       gBufferPassEncoder.setBindGroup(2, gBufferInstanceOffsetBindGroup, [_dynamicOffset * ALIGNED_SIZE]);
       _dynamicOffset++;
