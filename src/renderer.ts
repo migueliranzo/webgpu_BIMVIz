@@ -56,10 +56,10 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let indCountLd = 0;
   let instancesCountLd = 0;
   let instanceGroupCount = loadedModel.size;
-  loadedModel.forEach((x) => {
-    verCountLd += x.baseGeometry.vertexArray.byteLength;
-    indCountLd += x.baseGeometry.indexArray.byteLength;
-    instancesCountLd += x.instances ? x.instances.length : x.transparentInstances.length;
+  loadedModel.forEach((instanceGroup) => {
+    verCountLd += instanceGroup.baseGeometry.vertexArray.byteLength;
+    indCountLd += instanceGroup.baseGeometry.indexArray.byteLength;
+    instancesCountLd += instanceGroup.instances ? instanceGroup.instances.length : instanceGroup.transparentInstances.length;
   })
 
   //Buffer creation
@@ -133,6 +133,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   })
 
   //G Buffer textures
+  //TODO: Rename has highlight
   const positionTexture = device.createTexture({
     size: { width: canvasW, height: canvasH },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -464,19 +465,19 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
           }
         }, // albedo
         { format: 'r32uint' }, // Ids ,
-
         ]
       },
       primitive: {
         topology: 'triangle-list',
         frontFace: 'ccw',
-        cullMode: 'back' //TODO: Front also works for the kitchen
       },
       depthStencil: {
         depthWriteEnabled: true,
         depthCompare: 'less-equal',
         format: 'depth24plus',
-        depthBias: -1,
+        depthBias: -100,
+        depthBiasSlopeScale: 1,
+        depthBiasClamp: 0,
       },
       layout: device.createPipelineLayout({
         bindGroupLayouts: [gBufferConstantsBindGroupLayout, gBufferInstanceConstantFormsBindGroupLayout, gBufferInstanceOffsetBindGroupLayout, gBufferMeshUniformBindgroupLayout],
@@ -538,7 +539,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     ],
     depthStencilAttachment: {
       view: depthTexture.createView(),
-      depthClearValue: 1,
+      depthClearValue: 1.,
       depthLoadOp: 'clear',
       depthStoreOp: 'store',
     },
@@ -561,11 +562,15 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let instanceDataArrayFloatView = new Float32Array(instanceDataArray);
   let instanceDataArrayUintView = new Uint32Array(instanceDataArray);
   let instanceUniformOffsetDataArray = new Uint32Array((loadedModel.size * ALIGNED_SIZE) / 4);
-  const meshGroupsIds = new Float32Array(loadedModel.size * MAT4_SIZE);
   let meshLookUpIdOffsetIndex = 0;
-  const transparentInstancesGroups = [];
+  const transparentInstancesGroups = new Map();
 
-  const processInstanceGroups = (instanceGroup) => {
+  const priorityDrawCalls = new Map();
+  let standardDrawCalls = new Map();
+
+  //TODO: should also be renamed and refactored
+  const processInstanceGroups = (instanceGroup, _i) => {
+    standardDrawCalls.set(_i, { offset: instanceGroupI });
     const instanceType = instanceGroup.instances ? 'instances' : 'transparentInstances';
     drawCommandsArray[testI] = instanceGroup.baseGeometry.indexArray.length; //Index count
     drawCommandsArray[testI + 1] = instanceGroup[instanceType].length; //Instance count
@@ -596,15 +601,18 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
   }
 
-  loadedModel.forEach((instanceGroup) => {
+  //TODO: refactor, since adding priority draw calls this is even more unnecessary 
+  loadedModel.forEach((instanceGroup, _i) => {
     if (!instanceGroup.instances) {
-      transparentInstancesGroups.push(instanceGroup);
+      transparentInstancesGroups.set(_i, instanceGroup);
       return;
     }
-    processInstanceGroups(instanceGroup);
+    processInstanceGroups(instanceGroup, _i);
   })
 
-  transparentInstancesGroups.forEach((instanceGroup) => processInstanceGroups(instanceGroup))
+  transparentInstancesGroups.forEach((instanceGroup, _i) => processInstanceGroups(instanceGroup, _i))
+
+  console.log(standardDrawCalls)
 
   //Static buffers write
   device.queue.writeBuffer(gBufferInstanceOffsetBuffer, 0, instanceUniformOffsetDataArray)
@@ -622,12 +630,14 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     let fetchedMeshLookUpIdsList = [];
     let fetchedMeshUniformsDataArray = [];
     const multiTypeMeshes = new Map<any, any>;
-    let multiTypeMeshesLiveTypes = [];
-    meshGroupServiceHandler.getMeshGroups().then(({ meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, modelTreeStructure }) => {
-      console.log(meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, modelTreeStructure);
+    let multiTypeMeshesTypesState = [];
+    meshGroupServiceHandler.getMeshGroups().then(({ meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, typeIdInstanceGroupId }) => {
+      console.log(meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, typeIdInstanceGroupId);
       fetchedMeshLookUpIdsList = meshLookUpIdsList;
+      const meshUniformsDataArray = new Uint32Array((4) * meshLookUpIdsList.length);
+      //TODO: Should be Uint not float
+      const typeStatesDataArray = new Float32Array(typesIdStateMap.size * 4); //uint State + vec3 color for now 
 
-      const typeStatesDataArray = new Float32Array(typesIdStateMap.size * 4); //uint State + vec3 color for now
       let i = 0;
       typesIdStateMap.forEach((typeIdObject) => {
         multiTypeMeshes.set(typeIdObject.stringType, []);
@@ -638,7 +648,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
         i++
       })
 
-      const meshUniformsDataArray = new Uint32Array((4) * meshLookUpIdsList.length);
+      //TODO: Need to change the way we handle multitypes
       for (let i = 0; i < meshLookUpIdsList.length; i++) {
         const offset = ((4 * 4) / 4) * i;
         const meshExpressId = meshLookUpIdsList[i];
@@ -670,12 +680,19 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       actionHandler.onMepSystemChange((value) => {
         let testType = typesStatesBufferStrides.get(value);
 
-        multiTypeMeshesLiveTypes = [];
+        standardDrawCalls = new Map([...standardDrawCalls, ...priorityDrawCalls]);
+        priorityDrawCalls.clear();
+        typeIdInstanceGroupId.get(value).forEach((instanceGroupId) => {
+          const drawCallData = standardDrawCalls.get(instanceGroupId);
+          priorityDrawCalls.set(instanceGroupId, drawCallData);
+          standardDrawCalls.delete(instanceGroupId);
+        });
+
+        multiTypeMeshesTypesState = [];
         multiTypeMeshes.get(testType.stringType).forEach((multiTypeMeshOffset) => {
-          multiTypeMeshesLiveTypes.push({ multiTypeMeshOffset, value });
+          multiTypeMeshesTypesState.push({ multiTypeMeshOffset, value });
           device.queue.writeBuffer(gBufferMeshUniformBuffer, (multiTypeMeshOffset * 4), Uint32Array.of(value));
         })
-
 
         const updatedTypeStatesDataArray = new Float32Array(typeStatesDataArray);
         updatedTypeStatesDataArray[testType.stride / 4 + 3] = 1;
@@ -686,15 +703,15 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     meshGroupServiceHandler.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
       for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
         fetchedMeshUniformsDataArray[e + 2] = 1;
-
         if (toggledMeshesIdSet.has(fetchedMeshUniformsDataArray[e])) {
           fetchedMeshUniformsDataArray[e + 2] = 0;
         }
       }
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
 
-      multiTypeMeshesLiveTypes.forEach((liveType) => {
-        device.queue.writeBuffer(gBufferMeshUniformBuffer, (liveType.multiTypeMeshOffset * 4), Uint32Array.of(liveType.value));
+      //TODO: Refactor multitypes
+      multiTypeMeshesTypesState.forEach((typeState) => {
+        device.queue.writeBuffer(gBufferMeshUniformBuffer, (typeState.multiTypeMeshOffset * 4), Uint32Array.of(typeState.value));
       })
     })
 
@@ -708,8 +725,9 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       }
       device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
 
-      multiTypeMeshesLiveTypes.forEach((liveType) => {
-        device.queue.writeBuffer(gBufferMeshUniformBuffer, (liveType.multiTypeMeshOffset * 4), Uint32Array.of(liveType.value));
+      //TODO: Refactor multitypes
+      multiTypeMeshesTypesState.forEach((typeState) => {
+        device.queue.writeBuffer(gBufferMeshUniformBuffer, (typeState.multiTypeMeshOffset * 4), Uint32Array.of(typeState.value));
       })
     })
 
@@ -726,6 +744,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   let lastFrameMS = Date.now()
   const fpsElem = document.querySelector("#fps")!;
   let frameCount = 0;
+  //TODO: Refine the render function
   async function render() {
 
     frameCount++;
@@ -742,22 +761,24 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
     device.queue.writeBuffer(gBufferConstantsUniform, 0, cameraMatrix);
 
-
     const gBufferPassEncoder = commandEnconder.beginRenderPass(ifcModelPassDescriptor);
     gBufferPassEncoder.setPipeline(gBufferPipeline);
-    let _dynamicOffset = 0;
-    gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, 0);
-    gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', 0);
+
+
     gBufferPassEncoder.setBindGroup(0, gBufferConstantsBindGroup);
     gBufferPassEncoder.setBindGroup(1, gBufferInstanceConstantsBindGroup);
     gBufferPassEncoder.setBindGroup(3, gBufferMeshUniformBindGroup);
+    gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, 0);
+    gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', 0);
 
-    var incr = 0;
-    loadedModel.forEach((instanceGroup) => {
-      gBufferPassEncoder.setBindGroup(2, gBufferInstanceOffsetBindGroup, [_dynamicOffset * ALIGNED_SIZE]);
-      _dynamicOffset++;
-      gBufferPassEncoder.drawIndexedIndirect(drawIndirectCommandBuffer, incr * (4 * 5));
-      incr++;
+    priorityDrawCalls.forEach((drawCall) => {
+      gBufferPassEncoder.setBindGroup(2, gBufferInstanceOffsetBindGroup, [drawCall.offset * ALIGNED_SIZE]);
+      gBufferPassEncoder.drawIndexedIndirect(drawIndirectCommandBuffer, drawCall.offset * (4 * 5));
+    });
+
+    standardDrawCalls.forEach((drawCall) => {
+      gBufferPassEncoder.setBindGroup(2, gBufferInstanceOffsetBindGroup, [drawCall.offset * ALIGNED_SIZE]);
+      gBufferPassEncoder.drawIndexedIndirect(drawIndirectCommandBuffer, drawCall.offset * (4 * 5));
     });
 
     gBufferPassEncoder.end();

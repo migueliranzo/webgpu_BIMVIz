@@ -99,18 +99,35 @@ async function init() {
     return merged;
   },)
 
-  const viewModelHandler = createDataViewModel(typesList);
-  createModelServiceHandle(mergedModelGeneralProperties);
 
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(itemPropertiesMap);
-
-  console.log(itemspropertyarrayhandle.getItemProperties(5598))
-  viewModelHandler.updateRightSidePropsSync(itemspropertyarrayhandle.getItemProperties(5598))
-  console.log("🛝", ms() - start);
 
   actionHandler.onChange((value: number) => {
     viewModelHandler.updateRightSidePropsSync(itemspropertyarrayhandle.getItemProperties(value));
   })
+
+  const typeIdInstanceGroupId = new Map<any, any>;
+  mergedModelGeneralProperties.typesIdStateMap.forEach((typeStateObject) => {
+    typeIdInstanceGroupId.set(typeStateObject.typeId, []);
+  })
+
+  ////TODO Bad enough by itself so atleast encapsulate it
+  parsedModelInstancesMap.forEach((instanceGroup, _i) => {
+    instanceGroup.instances?.forEach((instance) => {
+      const instanceTypeStrings = mergedModelGeneralProperties.meshTypeIdMap.get(instance.meshExpressId);
+      if (instanceTypeStrings != undefined) {
+        const meshTypesStrings = instanceTypeStrings.split(',');
+        for (let typeString of meshTypesStrings) {
+          const instanceTypeId = mergedModelGeneralProperties.typesIdStateMap.get(typeString)?.typeId;
+          if ((instanceTypeId != undefined) && !typeIdInstanceGroupId.get(instanceTypeId).includes(_i)) {
+            typeIdInstanceGroupId.get(instanceTypeId).push(_i);
+          }
+        }
+      }
+    })
+  })
+  const viewModelHandler = createDataViewModel(typesList);
+  createModelServiceHandle({ ...mergedModelGeneralProperties, typeIdInstanceGroupId });
 }
 
 init();

@@ -73,7 +73,9 @@ fn vertex_main(@location(0) position: vec3f, @location(1) normal: vec3f, @builti
   //Type 
     if instanceTypeState.state == 1.0 {
  //       output.hightlight = vec4(instanceTypeState.color, 1.0);
-        output.hightlight = vec4(1., 0.0, 1.0, 1.0);
+        output.hightlight = vec4(1., 0.0, 1.0, .75);
+    } else {
+        output.hightlight = vec4(.0, 0.0, .0, .0);
     }
 
   //Object Hover
@@ -96,6 +98,7 @@ struct FragmentOutput {
     @location(1) worldNormal: vec4<f32>,
     @location(2) albedo: vec4<f32>,
     @location(3) objectID: vec4<u32>,
+    @location(4) hoverHightlight: vec4<f32>,
 }
 
 @fragment

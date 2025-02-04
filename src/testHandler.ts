@@ -17,14 +17,14 @@ const modelTreeChildParentMap = new Map();
 const toggledEventEmitter = createLocalEventEmitter('toggledEventEmitter');
 const hoveredEventEmitter = createLocalEventEmitter('hoveredEventEmitter');
 
-export function createModelServiceHandle({ revitTypesInversed, instanceExpressIds, meshIdInstancesIdMap, meshTypeIdMap, typesIdStateMap, modelTreeStructure }) {
+export function createModelServiceHandle({ instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure, typeIdInstanceGroupId }) {
   const LEFTSIDETREESTRUCTUREPANELELEMENT = document.getElementById('leftSideTreeStructurePanel');
 
   meshGroupsResolve({
     meshLookUpIdsList: instanceExpressIds,
-    meshTypeIdMap: meshTypeIdMap,
-    typesIdStateMap: typesIdStateMap,
-    modelTreeStructure: modelTreeStructure
+    meshTypeIdMap,
+    typesIdStateMap,
+    typeIdInstanceGroupId,
   });
 
   console.log(modelTreeStructure)
