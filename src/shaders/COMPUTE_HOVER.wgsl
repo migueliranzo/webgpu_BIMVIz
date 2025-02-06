@@ -1,36 +1,63 @@
-//TODO: The way the bindings are handled here is quite different than in the other shaders, take a closer look and compare with main gBufferPass
 @group(0) @binding(0) var<storage, read_write> hoverStates: array<f32>;
 @group(0) @binding(1) var<uniform> mouseCoords: vec4<f32>;
 @group(0) @binding(2) var objectIdTexture: texture_2d<u32>;
 @group(0) @binding(3) var<storage, read_write> selectedObject: vec4<f32>;
 
 
-//TODO: I honestly dont remember whats the deal with hoverStates since we only use selectedObject, it was the first compute shader and like in the first week into this
-//Like why do we even save the ID as float that makes so little sense, anywho running out of time cant fix everything, awaaaare the UI not even done 
 @compute @workgroup_size(1)
 fn main() {
+   //Calculate current hovered object based on mouse input 
     let normalizedMouseCoords = mouseCoords.xy / vec2<f32>(textureDimensions(objectIdTexture));
-    let hoveringObjectID = textureLoad(objectIdTexture, vec2<i32 >(normalizedMouseCoords * vec2<f32 >(textureDimensions(objectIdTexture))), 0).r;
+    let textureDims = vec2<f32>(textureDimensions(objectIdTexture));
+    let pixelCoords = vec2<i32>(normalizedMouseCoords * textureDims);
+    let hoveringObjectID = textureLoad(objectIdTexture, pixelCoords, 0).r;
+    
+    //Click states
     let lastClickCoord = mouseCoords.z;
     let prevClickCoord = mouseCoords.w;
+    let hoveredID = f32(hoveringObjectID);
+    let lastHoveredID = hoverStates[arrayLength(&hoverStates)];
+    
+    //Update hovered object Id only on change 
+    let shouldUpdateHover = hoveredID != lastHoveredID;
+    hoverStates[i32(lastHoveredID)] = select(
+        hoverStates[i32(lastHoveredID)],
+        0.0,
+        shouldUpdateHover
+    );
 
-    if f32(hoveringObjectID) != hoverStates[arrayLength(&hoverStates)] {
-        hoverStates[i32(hoverStates[arrayLength(&hoverStates)])] = 0.;
-        hoverStates[arrayLength(&hoverStates)] = f32(hoveringObjectID);
-        selectedObject.z = f32(hoveringObjectID);
-    }
+    hoverStates[arrayLength(&hoverStates)] = select(
+        lastHoveredID,
+        hoveredID,
+        shouldUpdateHover
+    );
 
-    if f32(hoveringObjectID) > 0. {
-        hoverStates[hoveringObjectID] = 1.0; //f32(objectID); 
-    }
-        //This would mean a new click has been registered
-    if lastClickCoord != selectedObject.y {
-            //if we are clicking on the same objectID we deselect
-        if f32(hoveringObjectID) == selectedObject.x {
-            selectedObject = vec4(f32(-1), lastClickCoord, 0, 1);
-        } else {
-            selectedObject = vec4(f32(hoveringObjectID), lastClickCoord, 0, 1);
-        }
-    }
+    selectedObject.z = select(
+        selectedObject.z,
+        hoveredID,
+        shouldUpdateHover
+    );
+    
+    //Check if hover is valid
+    let isValidObject = hoveredID > 0.0;
+    hoverStates[hoveringObjectID] = select(
+        hoverStates[hoveringObjectID],
+        1.0,
+        isValidObject
+    );
+    
+    //Account for click selection/deselection
+    let isNewClick = lastClickCoord != selectedObject.y;
+    let isSameObject = hoveredID == selectedObject.x;
+
+    let deselectedState = vec4<f32>(-1.0, lastClickCoord, 0.0, 1.0);
+    let selectedState = vec4<f32>(hoveredID, lastClickCoord, 0.0, 1.0);
+    
+    //Update only if new click was detected 
+    selectedObject = select(
+        selectedObject,
+        select(selectedState, deselectedState, isSameObject),
+        isNewClick
+    );
 }
 
