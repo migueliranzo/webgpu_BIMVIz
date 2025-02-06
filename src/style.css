@@ -58,6 +58,14 @@ body{
  gap: 0.5rem;
 }
 
+.green{
+  color: green;
+}
+
+.red{
+  color: red
+}
+
 #rightSidePropertiesPanel .item-properties-title, .item-propertySets-title {
   font-size: 18px;
   font-weight: 500;
@@ -66,13 +74,24 @@ body{
 }
 
 div.property-set-header{
-  background: salmon; 
+  background: #fa7276; 
   cursor: pointer;
 }
 
+.htmlList {
+-webkit-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
+-moz-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
+    box-shadow: -2px 0px 11px 0px rgba(0, 0, 0, 0.42);
+    border-top-left-radius: 5px;
+    margin: 10px 0px 0px 10px;
+    padding: 5px 25px 10px 10px;
+  background-color: white;
+}
 
 .property-value{
-
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
 }
 .property-title{
 font-weight: bold;
@@ -84,6 +103,11 @@ text-transform: capitalize;
   display: none;
 }
 
+.set-row-open {
+/*overflow-x: scroll;*/
+/*    max-width: 300px;*/
+}
+
 .transition-all {
     transition-duration: .15s;
     transition-property: all;
@@ -92,6 +116,11 @@ text-transform: capitalize;
 
 .translateFullyRigthX{
 transform: translateX(100%);
+}
+
+#leftSideTreeStructurePanel{
+ box-shadow: 2px 0px 11px 0px rgba(0, 0, 0, 0.42);
+border-top-right-radius: 5px;
 }
 
 #leftSideTreeStructurePanel div {
@@ -107,38 +136,230 @@ transform: translateX(100%);
 }
 
 .hidden{
-  display: none;
+  display: none !important;
+}
+
+div.active {
+  background-color: #ff0e4c  !important;
+  color: white !important;
+}
+
+.active img{
+    filter: invert(100%);
+}
+
+.actionBtn{
+background-color: white;
+  width: 40px; 
+  height: 40px;
+    -webkit-user-select: none;
+  position: relative;
+}
+
+.actionBtn img{
+   user-drag: none;
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+}
+
+div.actionBtn:hover{
+  cursor: pointer;
+  background-color: #e8e2e1 ;
+}
+
+.mepSelectionDialog{
+    width: 200px;
+    height: 200px;
+    display: block;
+    background: white;
+    position: absolute;
+  overflow: hidden;
+box-shadow: 0px 0px 8px 5px rgba(0, 0, 0, 0.1), 0 2px 20px 18px rgba(0, 0, 0, 0.06);
+    color: black;
+    font-size: 14px;
+    cursor: default;
+  z-index: 1;
+}
+
+.mepSelectionDialogCloseBtn{
+     float: right;
+    font-size: 10px;
+    background: #ff0e4c;
+    color: white;
+    font-weight: bold;
+    padding: 2.5px 5px;
+    border-bottom-left-radius: 0.30rem;
+  cursor: pointer;
+}
+
+.mepPanelContainer{
+    padding: 5px 10px 10px 10px;
 }
 
 .nodeContainer{
   /*display:flex; */
 }
 
+.nodeContainer p{
+    padding: 0px;
+    margin: 0px;
+}
+
+.nodeHeader{
+display: flex;
+    gap: 1.2rem;
+    align-items: center;
+    padding: 5px 0px;
+    border-radius: 4px;
+}
+
+.nodeHeader:hover{
+  background-color: #efefef;
+}
+
+.nodeName{
+color: #767676;
+    max-width: 200px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.nodeDot{
+ margin-left: 10px;
+}
+
 .nodeArrow::before{
     content: '';
-    border: 10px solid black;
-    border-right: 10px solid transparent;
-    border-bottom: 10px solid transparent;
-    border-top: 10px solid transparent;
-  display: inline-block;
+background-image: url('https://cdn-icons-png.flaticon.com/512/54/54833.png');
+    display: inline-block;
+    height: 12px;
+    background-size: cover;
+    width: 12px;
 }
 
 .nodeArrowDown::before{
     content: '';
-    border: 10px solid black;
-    border-right: 10px solid transparent;
-    border-left: 10px solid transparent;
-    border-bottom: 10px solid transparent;
-  display: inline-block;
+  background-image: url('https://cdn-icons-png.flaticon.com/512/318/318426.png');
+    display: inline-block;
+    height: 12px;
+    background-size: cover;
+    width: 12px;
+filter: invert(19%) sepia(41%) saturate(6699%) hue-rotate(334deg) brightness(102%) contrast(110%);
+
 }
 
 .nodeDot::before{
 content: ' ';
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     display: inline-block;
-    background: #000000;
+    background: #00000036;
+}
+
+.nodeActionVisibility{
+  background-image: url('https://cdn-icons-png.flaticon.com/512/2767/2767194.png');
+    height: 22px;
+    background-size: cover;
+    width: 22px;
+    background-color: #ffffff00;
+  cursor: pointer;
+}
+
+.nodeActionVisibilityHidden{
+  background-image: url('https://cdn-icons-png.flaticon.com/512/4855/4855030.png');
+filter: invert(19%) sepia(41%) saturate(6699%) hue-rotate(334deg) brightness(102%) contrast(110%);
+}
+
+.nodeActionHighlightToggle{
+background-image: url('https://cdn-icons-png.flaticon.com/512/9038/9038055.png');
+    height: 22px;
+    background-size: cover;
+    width: 22px;
+    background-color: #ffffff00;
+  cursor: pointer;
+}
+
+.nodeActionHighlightToggleActive{
+filter: invert(19%) sepia(41%) saturate(6699%) hue-rotate(334deg) brightness(102%) contrast(110%);
 }
 
 
+ .changeViewBtnGhost {
+perspective: 1000px;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+
+        }
+
+        .changeViewBtnGhostCube {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+    transition-duration: .35s;
+    transition-property: all;
+    transition-timing-function: cubic-bezier(.4,0,.2,1);
+            margin: 0 auto;
+            cursor: pointer;
+        }
+
+        .changeViewBtnGhostCubeFace {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            color: white;
+            transform-style: preserve-3d;
+            border-radius: .30rem;
+        }
+
+.changeViewBtnGhostCubeFace:hover{
+  cursor: pointer;
+  background-color: #e8e2e1 ;
+}
+
+
+        .setFrontView  { 
+  transform: translateZ(20px); 
+}
+        .setBackView   {
+  transform: rotateY(180deg) translateZ(20px); 
+}
+        .setRightView  {
+  transform: rotateY(90deg) translateZ(20px);
+}
+        .setLeftView   { 
+  transform: rotateY(-90deg) translateZ(20px); 
+}
+        .setTopView    { 
+  transform: rotateX(90deg) translateZ(20px); 
+}
+        .setBottomView { 
+  transform: rotateX(-90deg) translateZ(20px); 
+}
+
+
+@keyframes fade-color {
+  0% {
+  background-color: #ff0e4c;
+  }
+
+  100% {
+background-color: white;
+  }
+}
+
+.cubeFaceClicked{
+  animation-duration: 1.5s;
+  animation-name: fade-color;
+}

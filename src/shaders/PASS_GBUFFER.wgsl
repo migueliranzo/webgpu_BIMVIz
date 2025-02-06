@@ -79,9 +79,11 @@ fn vertex_main(
         meshData.treeVisibilityHover == 0
     );
 
+    //TODO: get feedback and decide
     output.hightlight = select(
         vec4(0.0),
-        vec4(1.0, 0.0, 1.0, 0.75),
+       // vec4(1.0, 0.0, 1.0, 0.75),
+        vec4(instanceTypeState.color, 0.75),
         instanceTypeState.state == 1.0
     );
 

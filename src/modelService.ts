@@ -25,7 +25,7 @@ const createDataEventsPromise = new Promise(resolve => {
   createDataEventsResolve = resolve;
 })
 
-export function createModelServiceHandle({ instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure, typeIdInstanceGroupId, dataEvents }) {
+export function createModelService({ instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure, typeIdInstanceGroupId, dataEvents }) {
   cachedResults = {
     typeIdInstanceGroupId,
     instanceExpressIds,
@@ -83,7 +83,6 @@ function createTypesData(typesIdStateMap) {
     typesBufferStrides.set(typeIdObject.typeId, { stride: offset * 4, stringType: typeIdObject.stringType })
     i++
   })
-
   const response = { typesDataArray, typesBufferStrides };
   storedTypeData = response;
   return response;

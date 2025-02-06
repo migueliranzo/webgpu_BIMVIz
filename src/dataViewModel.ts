@@ -1,5 +1,6 @@
 interface treeNode {
   name: string,
+  type: string,
   expressId: number,
   children: treeNode[]
 }
@@ -16,70 +17,117 @@ export function createItemspropertyarrayhandle(items: Map<any, any>) {
 
 let toggledMeshesIdSet: Set<number> = new Set();
 let hoveredMeshesIdSet: Set<number> = new Set();
+let hoverToggledIdSet: Set<number> = new Set();
 const modelTreeChildParentMap = new Map();
 const toggledEventEmitter = createLocalEventEmitter('toggledEventEmitter');
+const hoverToggledEventEmitter = createLocalEventEmitter('hoverToggledEventEmitter');
 const hoveredEventEmitter = createLocalEventEmitter('hoveredEventEmitter');
 const LEFTSIDETREESTRUCTUREPANELELEMENT = document.getElementById('leftSideTreeStructurePanel');
+const LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW = document.getElementById('leftSideTreeStructurePanelScrollView');
+
 
 export function setUpLeftPanelTreeView(modelTreeStructure) {
-
   modelTreeStructure.forEach((level) => {
-    createTreeNode(level, LEFTSIDETREESTRUCTUREPANELELEMENT, 0);
+    const treeNodeIconsMap = new Map();
+    createTreeNode(level, LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW, 0, 0, treeNodeIconsMap);
   })
 
-  function createTreeNode(node: treeNode, rootElement: HTMLElement, treeLevel: number, parentNodeId: number) {
+  function createTreeNode(node: treeNode, rootElement: HTMLElement, treeLevel: number, parentNodeId: number, localTreeNodeIconsMap: Map<any, any>) {
+    const nodeActionBtnsSection = document.createElement('div');
+    nodeActionBtnsSection.classList.add('flex', 'flex-row', 'gap-1')
+    nodeActionBtnsSection.style.flex = '1';
+    nodeActionBtnsSection.style.justifyContent = 'flex-end';
+    nodeActionBtnsSection.style.gap = '1rem';
+    nodeActionBtnsSection.style.paddingRight = '10px';
     const nodeContainer = document.createElement('div');
     nodeContainer.classList.add('hidden', 'nodeContainer')
 
-    const nodeHeader = document.createElement('div');
-    nodeHeader.innerText = node.name + ' ' + node.expressId;
+
+    const nodeHeaderTextSection = document.createElement('div');
+    nodeHeaderTextSection.classList.add('flex', 'flex-col', 'gap-1')
+    const nodeType = document.createElement('p');
+    nodeType.innerText = node.type;
+    const nodeName = document.createElement('p');
+    nodeName.innerText = node.name + ' ' + node.expressId;
+    nodeName.classList.add('nodeName');
+    nodeName.title = node.name;
+    nodeHeaderTextSection.appendChild(nodeType);
+    nodeHeaderTextSection.appendChild(nodeName);
+
+
+    const itemIcon = document.createElement('div');
 
     if (node.children.length > 0) {
       treeLevel++;
-      nodeHeader.classList.add('nodeArrow')
+      itemIcon.classList.add('nodeArrow')
     } else {
-      nodeHeader.classList.add('nodeDot')
+      itemIcon.classList.add('nodeDot')
     }
 
-    nodeContainer.style.paddingLeft = `${treeLevel * 2}px`;
+
+    const nodeHeader = document.createElement('div');
+    nodeHeader.classList.add('nodeHeader')
+    nodeHeader.appendChild(itemIcon);
+    nodeHeader.appendChild(nodeHeaderTextSection);
+
+
+    nodeHeader.style.paddingLeft = `${treeLevel * 5}px`;
     nodeContainer.addEventListener(('click'), (event) => {
       event.stopPropagation()
       Array.from(nodeContainer.children).slice(1, nodeContainer.children.length).forEach((child) => {
         child.classList.toggle('hidden');
       })
-      if (nodeHeader.classList.contains('nodeDot')) return;
-      nodeHeader.classList.toggle('nodeArrowDown');
+      if (itemIcon.classList.contains('nodeDot')) return;
+      itemIcon.classList.toggle('nodeArrowDown');
     })
 
     const toggleViewBtn = document.createElement('button');
-    toggleViewBtn.innerText = 'Hide'
-
+    toggleViewBtn.classList.add('nodeActionVisibility');
     toggleViewBtn.addEventListener(('click'), (event) => {
       event.stopPropagation();
-      getToggledIds(node, toggledMeshesIdSet);
+      getToggledIds({ ...node, toggleNodeIcon: () => toggleViewBtn.classList.add('nodeActionVisibilityHidden') }, toggledMeshesIdSet);
       toggledEventEmitter.emit(toggledMeshesIdSet);
+
+      localTreeNodeIconsMap.forEach((nodeIcons, _i) => {
+        toggledMeshesIdSet.has(_i) ? nodeIcons.toggleViewBtn.classList.add('nodeActionVisibilityHidden') : nodeIcons.toggleViewBtn.classList.remove('nodeActionVisibilityHidden');
+      })
+    })
+
+    const hoverToggleBtn = document.createElement('button');
+    hoverToggleBtn.classList.add('nodeActionHighlightToggle');
+    hoverToggleBtn.addEventListener(('click'), (event) => {
+      event.stopPropagation();
+      getToggledIds(node, hoverToggledIdSet);
+      hoverToggledEventEmitter.emit(hoverToggledIdSet);
+
+      localTreeNodeIconsMap.forEach((nodeIcons, _i) => {
+        hoverToggledIdSet.has(_i) ? nodeIcons.hoverToggleBtn.classList.add('nodeActionHighlightToggleActive') : nodeIcons.hoverToggleBtn.classList.remove('nodeActionHighlightToggleActive');
+      })
     })
 
     nodeHeader.addEventListener(('mouseenter'), (event) => {
       event.stopPropagation();
       getToggledIds(node, hoveredMeshesIdSet);
-      hoveredEventEmitter.emit(hoveredMeshesIdSet);
+      hoveredEventEmitter.emit(new Set([...hoveredMeshesIdSet, ...hoverToggledIdSet]));
     })
 
     nodeHeader.addEventListener(('mouseleave'), (event) => {
       event.stopPropagation();
       hoveredMeshesIdSet.clear()
-      hoveredEventEmitter.emit(hoveredMeshesIdSet);
+      hoveredEventEmitter.emit(hoverToggledIdSet);
     })
 
-    nodeHeader.appendChild(toggleViewBtn);
+
+    localTreeNodeIconsMap.set(node.expressId, { hoverToggleBtn, toggleViewBtn });
+
+    nodeActionBtnsSection.appendChild(toggleViewBtn);
+    nodeActionBtnsSection.appendChild(hoverToggleBtn);
+    nodeHeader.appendChild(nodeActionBtnsSection);
     nodeContainer.appendChild(nodeHeader)
     rootElement.appendChild(nodeContainer);
 
-
     modelTreeChildParentMap.set(node.expressId, parentNodeId);
-
-    node.children.forEach((child) => createTreeNode(child, nodeContainer, treeLevel, node.expressId))
+    node.children.forEach((child) => createTreeNode(child, nodeContainer, treeLevel, node.expressId, localTreeNodeIconsMap))
   }
 
 
@@ -107,12 +155,13 @@ export function setUpLeftPanelTreeView(modelTreeStructure) {
     }
   }
 
-  LEFTSIDETREESTRUCTUREPANELELEMENT?.children[0]?.classList.remove('hidden')
-  LEFTSIDETREESTRUCTUREPANELELEMENT?.children[1]?.classList.remove('hidden')
+  LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW?.children[0]?.classList.remove('hidden')
+  LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW?.children[1]?.classList.remove('hidden')
 
   return {
     treeListSelectionOnChange: toggledEventEmitter.subscribe,
-    treeListHoverOnChange: hoveredEventEmitter.subscribe
+    treeListHoverOnChange: hoveredEventEmitter.subscribe,
+    treeListHoverToggleOnChange: hoverToggledEventEmitter.subscribe
   }
 }
 
@@ -121,8 +170,10 @@ export function setUpRightPanelItemProperties(typesList: []) {
 
   const updateRightSidePropsSync = function(itemPropertiesObject: { itemProperties: {}, processedPropertySets: {} }) {
     const htmlList = document.createElement('div');
+    const htmlContainer = document.createElement('div');
     mapPropertiesToHtml(itemPropertiesObject, htmlList);
-    htmlList.classList.add('gap-5', 'flex', 'flex-col');
+    htmlList.classList.add('gap-5', 'flex', 'flex-col', 'htmlList');
+
     RIGHTSIDEPANELELEMENT.appendChild(htmlList)
   }
 
@@ -135,6 +186,8 @@ export function setUpRightPanelItemProperties(typesList: []) {
     for (const value in itemProperties) {
       const propertyRow = document.createElement('div');
       propertyRow.classList.add('flex', 'flex-row', 'justify-between');
+      propertyRow.style.maxWidth = '305px'
+      propertyRow.style.gap = '1rem';
       const propertyTitle = document.createElement('div');
       const propertyValue = document.createElement('div');
       propertyTitle.classList.add('property-title')
@@ -177,6 +230,8 @@ export function setUpRightPanelItemProperties(typesList: []) {
         for (const propertySetValueKey in propertySetValuePair) {
           const propertySetRowHeader = document.createElement('div');
           propertySetRowHeader.classList.add('flex', 'flex-row', 'justify-between', 'property-set-value-row');
+          propertySetRowHeader.style.maxWidth = '305px';
+          propertySetRowHeader.style.gap = '1rem';
 
           const propertySetTitle = document.createElement('div');
           const propertySetValue = document.createElement('div');
@@ -196,6 +251,7 @@ export function setUpRightPanelItemProperties(typesList: []) {
 
       htmlist.appendChild(propertySetRow);
     }
+    htmlist.appendChild(document.createElement('div'))
   }
 
   return {

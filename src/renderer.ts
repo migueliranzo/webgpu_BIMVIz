@@ -6,7 +6,7 @@ import { createInputHandler } from './deps/input.ts';
 import { OrbitCamera } from './deps/camera.ts';
 import { vec3, mat4 } from 'wgpu-matrix'
 import { getMeshGroupsHandler, createMultitypeMeshesHandler } from './modelService.ts';
-import { processInstanceGroups } from './DataManager.ts';
+import { processInstanceGroups } from './dataManager.ts';
 
 const RENDERER_CONSTANTS = {
   ALIGNED_SIZE: 256,
@@ -108,7 +108,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
   })
 
   //Setup events
-  meshGroupServiceHandler.getDataEvents().then((dataEvents: { treeListSelectionOnChange, treeListHoverOnChange }) => {
+  meshGroupServiceHandler.getDataEvents().then((dataEvents: { treeListSelectionOnChange, treeListHoverOnChange, treeListHoverToggleOnChange }) => {
     dataEvents.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
       try {
         const storedMeshUniformsDataArray = meshGroupServiceHandler.getStoredMeshData().meshUniformsDataArray;
@@ -116,6 +116,22 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
           storedMeshUniformsDataArray[e + 2] = 1;
           if (toggledMeshesIdSet.has(storedMeshUniformsDataArray[e])) {
             storedMeshUniformsDataArray[e + 2] = 0;
+          }
+        }
+        device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), 0, storedMeshUniformsDataArray);
+        getMultitypeMeshHandler().bufferWriteQueueState.applyQueue();
+      } catch (error) {
+        console.log("Data still loading...")
+      }
+    })
+
+    dataEvents.treeListHoverToggleOnChange((hoverToggledMeshesIdSet) => {
+      try {
+        const storedMeshUniformsDataArray = meshGroupServiceHandler.getStoredMeshData().meshUniformsDataArray;
+        for (let e = 0; e < storedMeshUniformsDataArray.length; e += 4) {
+          storedMeshUniformsDataArray[e + 3] = 1;
+          if (hoverToggledMeshesIdSet.has(storedMeshUniformsDataArray[e])) {
+            storedMeshUniformsDataArray[e + 3] = 0;
           }
         }
         device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), 0, storedMeshUniformsDataArray);
@@ -143,27 +159,36 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     })
   })
 
-  actionHandler.onMepSystemChange((newSelectedTypeId: number) => {
+  actionHandler.onMepSystemChange((newSelectedTypesIdsList: number) => {
     try {
-      let selectedTypeData = meshGroupServiceHandler.getStoredTypeData().typesBufferStrides.get(newSelectedTypeId);
+      const updatedTypeStatesDataArray = new Float32Array(meshGroupServiceHandler.getStoredTypeData().typesDataArray);
       standardDrawCalls = new Map([...standardDrawCalls, ...priorityDrawCalls]);
       priorityDrawCalls.clear();
-      meshGroupServiceHandler.getCachedResults().typeIdInstanceGroupId.get(newSelectedTypeId).forEach((instanceGroupIdWithNewType) => {
-        const drawCallData = standardDrawCalls.get(instanceGroupIdWithNewType);
-        priorityDrawCalls.set(instanceGroupIdWithNewType, drawCallData);
-        standardDrawCalls.delete(instanceGroupIdWithNewType);
-      });
-
       getMultitypeMeshHandler().bufferWriteQueueState.clearQueue();
-      meshGroupServiceHandler.storedMultiTypeMeshes.get(selectedTypeData.stringType).forEach((multiTypeMeshOffset) => {
-        getMultitypeMeshHandler().bufferWriteQueueState.addToQueue(() => device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), (multiTypeMeshOffset * 4), Uint32Array.of(newSelectedTypeId)));
+      const selectedTypeDataList = [];
+
+      newSelectedTypesIdsList.forEach((typeId) => {
+        const selectedTypeData = meshGroupServiceHandler.getStoredTypeData().typesBufferStrides.get(typeId);
+        meshGroupServiceHandler.getCachedResults().typeIdInstanceGroupId.get(typeId).forEach((instanceGroupIdWithNewType) => {
+          if (priorityDrawCalls.get(instanceGroupIdWithNewType)) return;
+          const drawCallData = standardDrawCalls.get(instanceGroupIdWithNewType);
+          priorityDrawCalls.set(instanceGroupIdWithNewType, drawCallData);
+          standardDrawCalls.delete(instanceGroupIdWithNewType);
+        });
+
+        meshGroupServiceHandler.storedMultiTypeMeshes.get(selectedTypeData.stringType).forEach((multiTypeMeshOffset) => {
+          getMultitypeMeshHandler().bufferWriteQueueState.addToQueue(() => device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), (multiTypeMeshOffset * 4), Uint32Array.of(typeId)));
+        })
+
+        selectedTypeDataList.push(selectedTypeData);
+        updatedTypeStatesDataArray[selectedTypeData.stride / 4 + 3] = 1;
       })
+
+      device.queue.writeBuffer(bufferManager.getBuffer('typeStatesBuffer'), 0, updatedTypeStatesDataArray);
+
       getMultitypeMeshHandler().bufferWriteQueueState.applyQueue();
-      const updatedTypeStatesDataArray = new Float32Array(meshGroupServiceHandler.getStoredTypeData().typesDataArray);
-      updatedTypeStatesDataArray[selectedTypeData.stride / 4 + 3] = 1;
-      device.queue.writeBuffer(bufferManager.getBuffer('typeStatesBuffer'), 0, updatedTypeStatesDataArray)
     } catch (error) {
-      console.log("Data still loading...")
+      console.log("Data still loading...", error)
     }
   });
 

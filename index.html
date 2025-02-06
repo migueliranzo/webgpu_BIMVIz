@@ -13,38 +13,47 @@
 
       <div class='p-2' style='position:absolute; top: 0; left: -20; padding-top: 3rem; '>
         <div class='flex flex-col gap-5' >
-       <div id='changeViewBtn' class='justify-center align-center flex rounded-md  shadow-md' style='background-color: white; width: 40px; height: 40px;
-    -webkit-user-select: none;'>
-<img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded">
+       <div id='changeViewBtn' style='background: none' class='justify-center align-center flex rounded-md  shadow-md actionBtn transition-all' >
+
+  <div class="changeViewBtnGhost">
+        <div class="changeViewBtnGhostCube">
+            <div class="changeViewBtnGhostCubeFace setFrontView"><img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
+            <div class="changeViewBtnGhostCubeFace setBackView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
+            <div  class="changeViewBtnGhostCubeFace setRightView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
+            <div class="changeViewBtnGhostCubeFace setLeftView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
+            <div class="changeViewBtnGhostCubeFace setTopView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
+            <div class="changeViewBtnGhostCubeFace setBottomView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
+        </div>
+    </div>
         </div>
 
-
-       <div class='justify-center align-center flex rounded-md  shadow-md' style='background-color: white; width: 40px; height: 40px;
-    -webkit-user-select: none;'>
-<img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=0m38bvTzUZwt&format=png 1x, https://img.icons8.com/?size=48&id=0m38bvTzUZwt&format=png 2x" width="24" height="24" alt="Tree icon" class="loaded">
-        </div>
-
-
-       <div id='changeMepModule' class='justify-center align-center flex rounded-md  shadow-md' style='background-color: white; width: 40px; height: 40px;
-    -webkit-user-select: none;'>
+       <div id='changeMepModuleBtn' class='justify-center align-center flex rounded-md  shadow-md actionBtn transition-all' >
 <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=256w&id=22798&format=png 1x, https://img.icons8.com/?size=512w&id=22798&format=png 2x" width="24" height="24" alt="Tree icon" class="loaded">
         </div>
 
+
+       <div id='toggleProjectThreeViewBtn' class='justify-center align-center flex rounded-md  shadow-md active actionBtn transition-all' >
+<img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=0m38bvTzUZwt&format=png 1x, https://img.icons8.com/?size=48&id=0m38bvTzUZwt&format=png 2x" width="24" height="24" alt="Tree icon" class="loaded">
+        </div>
+
+        </div>
+      </div>
+        <div id='rightSidePropertiesPanelContainer' style='max-width: 350px; height:calc(100dvh - 3rem); top: 3rem; position: absolute; right: 0; overflow: hidden;'>
+        <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-4' style='height: 100%; display: flex; overflow: hidden; font-size: 13px; width: 100%;'>
         </div>
       </div>
 
-        <div style='max-width: 300px; height:calc(100dvh - 3rem); top: 3rem; position: absolute; right: 0; overflow: hidden; 
--webkit-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
--moz-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
-box-shadow: -2px 0px 22px 0px rgba(0,0,0,0.42);
-border-top-left-radius: 5px;
-        '>
-        <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-4' style='height: 100%; display: flex; overflow: hidden; background-color: white;
-        font-size: 13px'>
+          
+         <div id='leftSideTreeStructurePanel' style='position: absolute; top: 200px; background: white; padding:10px 0px 10px 10px; height: calc(-222px + 100vh);  width: 400px'>
+           <div style='font-size: 19px;
+    font-weight: 500;
+    padding: 0.5rem;'>Model tree</div>
+        <div id='leftSideTreeStructurePanelScrollView' style='
+    overflow-y: scroll;
+    height: calc(100% - 52px);
+        padding: 7px;'>
         </div>
       </div>
-
-     <div id='leftSideTreeStructurePanel' style='position: absolute; top: 200px; background: white; padding: 10px; height: 90vh; overflow-y: scroll'></div>
 
     </div>
     <script type="module" src="/src/main.ts"></script>

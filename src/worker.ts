@@ -154,7 +154,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     }
 
 
-    //TODO: consolidate the revit mech function
     for (let flowTerminalLineId of flowTerminalsLineIds) {
       let flowTerminalLineObject = ifcAPI.GetLine(modelID, flowTerminalLineId);
       let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, flowTerminalLineObject.expressID);
@@ -168,7 +167,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       })
     }
 
-    //TODO: Not even type Id reomve the type
     for (let energyConversionTypesLineId of energyConversionLineIds) {
       let energyConversionTypesLineObject = ifcAPI.GetLine(modelID, energyConversionTypesLineId);
       let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, energyConversionTypesLineObject.expressID);
@@ -188,9 +186,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     }
 
 
-    //TODO: cleanup colors as well
-    const pipeTypeColor = [[.9, .9, 0.], [.9, 0, 0], [0.5, 0.5, 0.5], [0.5, 0.5, 0.2], [0., 0., .9], [.9, 0., .9], [0.3, 1.0, 0.1]]
-
     for (let defineByTypeLineId of defineByTypeLineIds) {
       const defineByTypeLineObject = ifcAPI.GetLine(modelID, defineByTypeLineId);
       const relatingTypeId = defineByTypeLineObject.RelatingType.value;
@@ -200,7 +195,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           let pipeObject = ifcAPI.GetLine(modelID, object.value);
           meshTypeIdMap.set(pipeObject.expressID, 'Electrical');
           if (!typesIdStateMap.has('Electrical')) {
-            typesIdStateMap.set('Electrical', { typeId: typesIdStateMap.size, stringType: 'Electrical', state: 0, color: pipeTypeColor[typesIdStateMap.size] })
+            typesIdStateMap.set('Electrical', { typeId: typesIdStateMap.size, stringType: 'Electrical', state: 0, color: getMepHighlightColor(typesIdStateMap.size) })
           }
         }
       }
@@ -215,26 +210,30 @@ const parseIfcFile = async function(FILE: Uint8Array) {
             if (revitVal.Name.value == 'System Type') {
               meshTypeIdMap.set(pipeObject.expressID, revitVal.NominalValue.value);
               if (!typesIdStateMap.has(revitVal.NominalValue.value)) {
-                typesIdStateMap.set(revitVal.NominalValue.value, { typeId: typesIdStateMap.size, stringType: revitVal.NominalValue.value, state: 0, color: pipeTypeColor[typesIdStateMap.size] })
+                typesIdStateMap.set(revitVal.NominalValue.value, { typeId: typesIdStateMap.size, stringType: revitVal.NominalValue.value, state: 0, color: getMepHighlightColor(typesIdStateMap.size) })
               }
               return
             }
           })
         }
       }
+
+      //Test remove
+      meshTypeIdMap.set(78884, 'Electrical');
+      meshTypeIdMap.set(79017, 'Electrical');
     }
 
     //Model tree structure
     const mapTree = (treeNode) => {
       return {
-        name: treeNode.type,
+        type: treeNode.type,
+        name: treeNode.Name ? treeNode.Name.value : 'noname',
         expressId: treeNode.expressID,
         children: treeNode.children.map((child) => mapTree(child))
       }
     }
 
     const modelTreeStructure = mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true));
-    //Just adding everything here for now, surely it wont become a problem later -> it did.
     const generalProperties = { instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
   }
@@ -263,4 +262,14 @@ function generateGeometryHash(vertexArray: Float32Array) {
   }
 
   return hash;
+}
+
+function getMepHighlightColor(index) {
+  const colors = [[1, 0, 1], [0, 0, 1], [0, 1, 1], [1, 0, 0], [1, 1, 0], [0, 1, 0]];
+
+  if (index < colors.length) {
+    return colors[index];
+  }
+
+  return colors[index % colors.length];
 }

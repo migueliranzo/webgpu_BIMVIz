@@ -1,10 +1,5 @@
 const ALIGNED_SIZE = 256;
 
-
-export function createDataManager() {
-
-}
-
 export function processInstanceGroups(shortedInstanceGroups: Map<any, any>, meshLookUpIdOffsets: number[], modelAttributes: { verCount: number, indCount: number, instancesCount: number, instanceGroupsCount: number }) {
   let _offsetGeo = 0;
   let _offsetIndex = 0;
