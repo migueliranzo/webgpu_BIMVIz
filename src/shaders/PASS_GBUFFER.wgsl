@@ -26,10 +26,10 @@ struct typeState {
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
-  @location(1) hightlight: vec4f,
-  @location(2) albedo: vec4f,
-  @location(3) normal: vec3f ,
-  @location(4)  @interpolate(flat) id: u32,
+  @location(0) hightlight: vec4f,
+  @location(1) albedo: vec4f,
+  @location(2) normal: vec3f ,
+  @location(3)  @interpolate(flat) id: u32,
 }
 
 
@@ -41,54 +41,58 @@ struct VertexOutput {
 @binding(2) @group(3) var<storage, read> selectedID: array<f32>;
 
 @vertex 
-fn vertex_main(@location(0) position: vec3f, @location(1) normal: vec3f, @builtin(instance_index) instanceIndex: u32) -> VertexOutput {
+fn vertex_main(
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @builtin(instance_index) instanceIndex: u32
+) -> VertexOutput {
     let instanceUniforms = instanceUniforms[instanceIndex + instanceIndexOffset.x];
     let meshData = meshUniforms[instanceUniforms.id];
     let instanceTypeState = typeStates[meshData.typeId];
+
     var output: VertexOutput;
-    var mvpMatrix = constantUnifroms.projectionMatrix * constantUnifroms.viewMatrix * instanceUniforms.modelMatrix;
+    let mvpMatrix = constantUnifroms.projectionMatrix * constantUnifroms.viewMatrix * instanceUniforms.modelMatrix;
+
     output.position = mvpMatrix * vec4f(position, 1.0);
- //   output.hightlight = (instanceUniforms.modelMatrix * vec4f(position, 1.0)).xyz;
     output.normal = normalize(instanceUniforms.modelMatrix * vec4(normal, 0.0)).xyz;
-    output.albedo = vec4(instanceUniforms.color);
+
+    output.albedo = instanceUniforms.color;
+    output.hightlight = vec4(0.0);
     output.id = meshData.meshId;
 
-    if dot(output.albedo, output.albedo) == 4.0 {
+    let isDefaultColor = dot(output.albedo, output.albedo) == 4.0;
+    output.albedo = select(
+        output.albedo,
+        vec4f(0.7, 0.7, 0.7, 1.0),
+        isDefaultColor
+    );
 
-        output.albedo = vec4f(0.7, 0.7, 0.7, 1.);
-    }
+    output.position = select(
+        output.position,
+        vec4f(0.0),
+        meshData.treeVisibilityToggle == 0
+    );
 
+    output.albedo = select(
+        output.albedo,
+        vec4(0.0, 1.0, 0.0, 0.5),
+        meshData.treeVisibilityHover == 0
+    );
 
-  //Visibility
-    if meshData.treeVisibilityToggle == 0 {
-        output.position = vec4f(0., 0., 0., 0.);
-    }
+    output.hightlight = select(
+        vec4(0.0),
+        vec4(1.0, 0.0, 1.0, 0.75),
+        instanceTypeState.state == 1.0
+    );
 
-  //Three hover
-    if meshData.treeVisibilityHover == 0 {
-//       output.hightlight = vec4(0.0, 1., 0., 0.5);
-        output.albedo = vec4(0.0, 1., 0., 0.5);
-    }
+    let isHovered = selectedID[2] == f32(meshData.meshId);
+    let isSelected = selectedID[0] == f32(meshData.meshId);
 
-  //Type 
-    if instanceTypeState.state == 1.0 {
- //       output.hightlight = vec4(instanceTypeState.color, 1.0);
-        output.hightlight = vec4(1., 0.0, 1.0, .75);
-    } else {
-        output.hightlight = vec4(.0, 0.0, .0, .0);
-    }
+    let hoverColor = output.albedo + vec4(0.2, 0.2, 0.3, 0.0);
+    let selectColor = vec4(0.9, .9, 0.9, output.albedo.w);
 
-  //Object Hover
-    if selectedID[2] == f32(meshData.meshId) {
-        output.albedo = output.albedo + vec4(.0, 0., .15, .0);
-    }
-
-  //Clicked
-    if selectedID[0] == f32(meshData.meshId) {
-    //TODO blend/mix with default albedo to create a more softer and highlated effect, same way select color of btns are 75% their default color so it gives that selected effect :>
-        output.albedo = output.albedo + vec4(.0, 0., .5, .0);
-    }
-
+    output.albedo = mix(output.albedo, hoverColor, f32(isHovered) * 0.3);
+    output.albedo = mix(output.albedo, selectColor, f32(isSelected) * 0.5);
 
     return output;
 }

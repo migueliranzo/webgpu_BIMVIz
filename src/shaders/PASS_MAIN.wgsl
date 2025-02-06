@@ -8,15 +8,15 @@ fn vertex_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) ve
     return vec4f(vertexArray[vertexIndex], 0.0, 1.0);
 }
 
-@group(0) @binding(0) var hightlightsTexture: texture_2d<f32>;
+@group(0) @binding(0) var highlightTexture: texture_2d<f32>;
 @group(0) @binding(1) var normalTexture: texture_2d<f32>;
 @group(0) @binding(2) var albedoTexture: texture_2d<f32>;
 @group(0) @binding(3) var idTexture: texture_2d<u32>;
 
 @fragment
 fn fragment_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let textCoord = position.xy / vec2<f32>(textureDimensions(hightlightsTexture));
-    let hightlightsTexture = textureLoad(hightlightsTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(hightlightsTexture))), 0).xyzw;
+    let textCoord = position.xy / vec2<f32>(textureDimensions(highlightTexture));
+    let highlightValue = textureLoad(highlightTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(highlightTexture))), 0).xyzw;
     let normalTexture = normalize(textureLoad(normalTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(normalTexture))), 0).xyz);//keep an eye on this normalization
     let albedoTexture = textureLoad(albedoTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(albedoTexture))), 0).xyzw;
     let idTexture = textureLoad(idTexture, vec2<i32>(textCoord * vec2<f32>(textureDimensions(idTexture))), 0).x;
@@ -32,9 +32,9 @@ fn fragment_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f3
  //       highlight = vec4f(vec3f(1.0), 0.);
  //   }
 
-    if hightlightsTexture.w != 0 {
+    if highlightValue.w != 0 {
  //       outputcolor = vec4f(1., 0., 1.0, .7);
-        outputcolor = hightlightsTexture;
+        outputcolor = highlightValue;
     }
 
     return vec4f(outputcolor + highlight);

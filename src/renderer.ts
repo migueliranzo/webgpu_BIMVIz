@@ -1,195 +1,440 @@
-import ifcModelShaderCode from './shaders/PASS_LOADMODEL.wgsl?raw';
+import gBufferShaderCode from './shaders/PASS_GBUFFER.wgsl?raw';
 import computeForwardCode from './shaders/COMPUTE_HOVER.wgsl?raw';
-import mainPassShaderCode from './shaders/PASS_DIRECTLIGHT.wgsl?raw';
+import mainPassShaderCode from './shaders/PASS_MAIN.wgsl?raw';
 import { getMVPMatrix, getProjectionMatrix, getViewMatrix, getWorldMatrix } from './math_utils.ts';
 import { createInputHandler } from './deps/input.ts';
 import { OrbitCamera } from './deps/camera.ts';
-import { createActionsHandler } from './actions.ts'
 import { vec3, mat4 } from 'wgpu-matrix'
-import { createModelServiceHandle, getMeshGroupsHandler } from './testHandler.ts';
+import { getMeshGroupsHandler, createMultitypeMeshesHandler } from './modelService.ts';
+import { processInstanceGroups } from './DataManager.ts';
 
-export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
-  const ALIGNED_SIZE = 256;
-  const MAT4_SIZE = 4 * 16;
-  const VEC4_SIZE = 4 * 4;
-  const VEC3_SIZE = 4 * 3;
-  const VEC2_SIZE = 4 * 2;
-  const MESHTYPEUNDEFINED = 99;
+const RENDERER_CONSTANTS = {
+  ALIGNED_SIZE: 256,
+  MAT4_SIZE: 4 * 16,
+  VEC4_SIZE: 4 * 4,
+  VEC3_SIZE: 4 * 3,
+  VEC2_SIZE: 4 * 2,
+} as const;
 
-  //Getting the context stuff here for now, not sure where it will go
-  const context = canvas.getContext('webgpu')!;
-  let canvasW = canvas.width;
-  let canvasH = canvas.height;
+class BufferManager {
+  private device: GPUDevice;
+  private buffers: Map<string, GPUBuffer> = new Map();
 
-  //Camera 
-  const cameraSettings = {
-    eye: vec3.create(2., 2.2, 8.0),
-    target: vec3.create(0., 0.8, 2.)
+  constructor(device: GPUDevice) {
+    this.device = device;
   }
 
-  const initialCameraPosition = cameraSettings.eye;
-  const camera = new OrbitCamera({ position: initialCameraPosition })
-  const inputHandler = createInputHandler(window, canvas);
+  createBuffer(name: string, descriptor: GPUBufferDescriptor): GPUBuffer {
+    const buffer = this.device.createBuffer(descriptor);
+    this.buffers.set(name, buffer);
+    return buffer;
+  }
+
+  getBuffer(name: string): GPUBuffer {
+    return this.buffers.get(name)!;
+  }
+}
+
+class PipelineManager {
+  private device: GPUDevice;
+  private pipelines: Map<string, GPURenderPipeline | GPUComputePipeline> = new Map();
+
+  constructor(device: GPUDevice) {
+    this.device = device;
+  }
+
+  createRenderPipeline(name: string, descriptor: GPURenderPipelineDescriptor): GPURenderPipeline {
+    const pipeline = this.device.createRenderPipeline(descriptor);
+    this.pipelines.set(name, pipeline);
+    return pipeline;
+  }
+
+  createComputePipeline(name: string, descriptor: GPUComputePipelineDescriptor): GPUComputePipeline {
+    const pipeline = this.device.createComputePipeline(descriptor);
+    this.pipelines.set(name, pipeline);
+    return pipeline;
+  }
+
+  getPipeline(name: string): GPURenderPipeline | GPUComputePipeline {
+    return this.pipelines.get(name)!
+  }
+}
+
+
+export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
+
+  //Init context and managers
+  const contextSettings = initializeContext(device, canvas);
+  const bufferManager = new BufferManager(device);
+  const pipelineManager = new PipelineManager(device);
+  const { camera, inputHandler } = initializeInputAndCamera(canvas);
+  const { modelAttributes, shortedInstanceGroups } = calculateModelAttributesAndShortInstanceGroups(loadedModel);
   actionHandler.createLeftActions(camera);
 
-  const ifcModelshaderModule = device.createShaderModule({
-    code: ifcModelShaderCode,
+  //Create webgpu resources
+  createBuffers(bufferManager, { ...modelAttributes, meshCount });
+  const textures = createTextures(device, canvas);
+  const bindGroupLayouts = createBindGroupLayouts(device);
+  const bindGroups = createBindGroups(device, bufferManager, textures, bindGroupLayouts);
+  createPipelines(pipelineManager, device, bindGroupLayouts);
+  const passDescriptors = createPassDescriptors(contextSettings, textures);
+
+  //Static buffer writes
+  const proMat = getProjectionMatrix(canvas.width, canvas.height);
+  device.queue.writeBuffer(bufferManager.getBuffer('gBufferConstantsUniform'), 64, proMat);
+
+  //Process instance groups
+  const processedInstanceGroups = processInstanceGroups(shortedInstanceGroups, meshLookUpIdOffsets, modelAttributes);
+  device.queue.writeBuffer(bufferManager.getBuffer('gBufferInstanceUniformsOffsetsBuffer'), 0, processedInstanceGroups.instanceUniformsOffsetsDataArray)
+  device.queue.writeBuffer(bufferManager.getBuffer('gBufferInstanceUniformsBuffer'), 0, processedInstanceGroups.instanceDataArray)
+  device.queue.writeBuffer(bufferManager.getBuffer('drawIndirectCommandBuffer'), 0, processedInstanceGroups.drawCommandsDataArray);
+  device.queue.writeBuffer(bufferManager.getBuffer('ifcModelVertexBuffer'), 0, processedInstanceGroups.vertexDataArray);
+  device.queue.writeBuffer(bufferManager.getBuffer('ifcModelIndexBuffer'), 0, processedInstanceGroups.indexDataArray);
+
+  //Setup draw calls
+  const priorityDrawCalls = new Map();
+  let standardDrawCalls = processedInstanceGroups.drawCalls;
+
+  //Handle async model properties
+  const meshGroupServiceHandler = getMeshGroupsHandler();
+  const getMultitypeMeshHandler = createMultitypeMeshesHandler();
+
+  meshGroupServiceHandler.getMeshUniformsData().then((meshDataResponse) => {
+    device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), 0, meshDataResponse.meshUniformsDataArray)
+  });
+
+  meshGroupServiceHandler.getTypeData().then((typeDataResponse) => {
+    device.queue.writeBuffer(bufferManager.getBuffer('typeStatesBuffer'), 0, typeDataResponse.typesDataArray)
   })
 
-  const computeHoverShaderModule = device.createShaderModule({
-    code: computeForwardCode,
+  //Setup events
+  meshGroupServiceHandler.getDataEvents().then((dataEvents: { treeListSelectionOnChange, treeListHoverOnChange }) => {
+    dataEvents.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
+      try {
+        const storedMeshUniformsDataArray = meshGroupServiceHandler.getStoredMeshData().meshUniformsDataArray;
+        for (let e = 0; e < storedMeshUniformsDataArray.length; e += 4) {
+          storedMeshUniformsDataArray[e + 2] = 1;
+          if (toggledMeshesIdSet.has(storedMeshUniformsDataArray[e])) {
+            storedMeshUniformsDataArray[e + 2] = 0;
+          }
+        }
+        device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), 0, storedMeshUniformsDataArray);
+        getMultitypeMeshHandler().bufferWriteQueueState.applyQueue();
+      } catch (error) {
+        console.log("Data still loading...")
+      }
+    })
+
+    dataEvents.treeListHoverOnChange((hoveredMeshesIdSet: Set<number>) => {
+      try {
+        const storedMeshUniformsDataArray = meshGroupServiceHandler.getStoredMeshData().meshUniformsDataArray;
+        for (let e = 0; e < storedMeshUniformsDataArray.length; e += 4) {
+          if (hoveredMeshesIdSet.has(storedMeshUniformsDataArray[e])) {
+            storedMeshUniformsDataArray[e + 3] = 0;
+          } else {
+            storedMeshUniformsDataArray[e + 3] = 1;
+          }
+        }
+        device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), 0, storedMeshUniformsDataArray);
+        getMultitypeMeshHandler().bufferWriteQueueState.applyQueue();
+      } catch (error) {
+        console.log("Data still loading...")
+      }
+    })
   })
 
-  const mainPassShaderModule = device.createShaderModule({
-    code: mainPassShaderCode
-  })
+  actionHandler.onMepSystemChange((newSelectedTypeId: number) => {
+    try {
+      let selectedTypeData = meshGroupServiceHandler.getStoredTypeData().typesBufferStrides.get(newSelectedTypeId);
+      standardDrawCalls = new Map([...standardDrawCalls, ...priorityDrawCalls]);
+      priorityDrawCalls.clear();
+      meshGroupServiceHandler.getCachedResults().typeIdInstanceGroupId.get(newSelectedTypeId).forEach((instanceGroupIdWithNewType) => {
+        const drawCallData = standardDrawCalls.get(instanceGroupIdWithNewType);
+        priorityDrawCalls.set(instanceGroupIdWithNewType, drawCallData);
+        standardDrawCalls.delete(instanceGroupIdWithNewType);
+      });
 
-  context.configure({
+      getMultitypeMeshHandler().bufferWriteQueueState.clearQueue();
+      meshGroupServiceHandler.storedMultiTypeMeshes.get(selectedTypeData.stringType).forEach((multiTypeMeshOffset) => {
+        getMultitypeMeshHandler().bufferWriteQueueState.addToQueue(() => device.queue.writeBuffer(bufferManager.getBuffer('gBufferMeshUniformBuffer'), (multiTypeMeshOffset * 4), Uint32Array.of(newSelectedTypeId)));
+      })
+      getMultitypeMeshHandler().bufferWriteQueueState.applyQueue();
+      const updatedTypeStatesDataArray = new Float32Array(meshGroupServiceHandler.getStoredTypeData().typesDataArray);
+      updatedTypeStatesDataArray[selectedTypeData.stride / 4 + 3] = 1;
+      device.queue.writeBuffer(bufferManager.getBuffer('typeStatesBuffer'), 0, updatedTypeStatesDataArray)
+    } catch (error) {
+      console.log("Data still loading...")
+    }
+  });
+
+  //Setup object hover selection
+  let previousSelectedId = 0;
+  const updateId = (currentId: number) => {
+    if (currentId != previousSelectedId) {
+      actionHandler.updateSelectedId(currentId);
+      previousSelectedId = currentId;
+    }
+  }
+
+  //Setup fps counter
+  let lastFrameMS = Date.now()
+  const fpsElem = document.querySelector("#fps")!;
+
+  //Render loop
+  async function renderLoop() {
+    const now = Date.now();
+    const deltaTime = (now - lastFrameMS) / 1000;
+    const commandEnconder = device.createCommandEncoder();
+    lastFrameMS = now;
+    const fps = 1 / deltaTime;
+    fpsElem.textContent = fps.toFixed(1);
+
+    const canvasView = contextSettings.getCurrentTexture().createView();
+    passDescriptors.mainPassDescriptor.colorAttachments[0].view = canvasView;
+
+    device.queue.writeBuffer(bufferManager.getBuffer('gBufferConstantsUniform'), 0, camera.update(deltaTime, { ...inputHandler() }));
+
+    const gBufferPassEncoder = commandEnconder.beginRenderPass(passDescriptors.ifcModelPassDescriptor);
+    gBufferPassEncoder.setPipeline(pipelineManager.getPipeline('gBufferPipeline'));
+
+    gBufferPassEncoder.setBindGroup(0, bindGroups.gBufferConstantsBindGroup);
+    gBufferPassEncoder.setBindGroup(1, bindGroups.gBufferInstanceUniformsBindGroup);
+    gBufferPassEncoder.setBindGroup(3, bindGroups.gBufferMeshUniformBindGroup);
+    gBufferPassEncoder.setVertexBuffer(0, bufferManager.getBuffer('ifcModelVertexBuffer'), 0);
+    gBufferPassEncoder.setIndexBuffer(bufferManager.getBuffer('ifcModelIndexBuffer'), 'uint32', 0);
+
+    priorityDrawCalls.forEach((drawCall) => {
+      gBufferPassEncoder.setBindGroup(2, bindGroups.gBufferInstanceUniformsOffsetsBindGroup, [drawCall.offset * RENDERER_CONSTANTS.ALIGNED_SIZE]);
+      gBufferPassEncoder.drawIndexedIndirect(bufferManager.getBuffer('drawIndirectCommandBuffer'), drawCall.offset * (4 * 5));
+    });
+
+    standardDrawCalls.forEach((drawCall) => {
+      gBufferPassEncoder.setBindGroup(2, bindGroups.gBufferInstanceUniformsOffsetsBindGroup, [drawCall.offset * RENDERER_CONSTANTS.ALIGNED_SIZE]);
+      gBufferPassEncoder.drawIndexedIndirect(bufferManager.getBuffer('drawIndirectCommandBuffer'), drawCall.offset * (4 * 5));
+    });
+
+    gBufferPassEncoder.end();
+
+    const computePassEncoder = commandEnconder.beginComputePass();
+    computePassEncoder.setPipeline(pipelineManager.getPipeline('computeHoverPipeline'));
+    device.queue.writeBuffer(bufferManager.getBuffer('mouseCoordsBuffer'), 0, Float32Array.of(
+      inputHandler().mouseHover.x,
+      inputHandler().mouseHover.y,
+      inputHandler().mouseClickState.clickReg,
+      inputHandler().mouseClickState.lastClickReg)
+    );
+    computePassEncoder.setBindGroup(0, bindGroups.computeHoverBindGroup);
+    computePassEncoder.dispatchWorkgroups(1);
+    computePassEncoder.end();
+
+    const mainPassEncoder = commandEnconder.beginRenderPass(passDescriptors.mainPassDescriptor);
+    mainPassEncoder.setPipeline(pipelineManager.getPipeline('mainPassPipeline'));
+    mainPassEncoder.setBindGroup(0, bindGroups.mainPassBindgroup);
+    mainPassEncoder.draw(3)
+    mainPassEncoder.end();
+
+    commandEnconder.copyBufferToBuffer(
+      bufferManager.getBuffer('computeSelectedIdBuffer'),
+      0,
+      bufferManager.getBuffer('computeSelectedIdStagingBuffer'),
+      0,
+      RENDERER_CONSTANTS.VEC4_SIZE,
+    )
+
+    device.queue.submit([commandEnconder.finish()]);
+
+    await bufferManager.getBuffer('computeSelectedIdStagingBuffer').mapAsync(
+      GPUMapMode.READ,
+      0,
+      RENDERER_CONSTANTS.VEC4_SIZE
+    );
+
+    const copyArrayBuffer = bufferManager.getBuffer('computeSelectedIdStagingBuffer').getMappedRange(0, RENDERER_CONSTANTS.VEC4_SIZE);
+    const data = copyArrayBuffer.slice();
+    //console.log(new Float32Array(data));
+    updateId(new Float32Array(data)[0])
+    bufferManager.getBuffer('computeSelectedIdStagingBuffer').unmap();
+
+    requestAnimationFrame(renderLoop);
+  }
+  requestAnimationFrame(renderLoop);
+
+}
+
+//Supporting functions
+function initializeContext(device: GPUDevice, canvas: HTMLCanvasElement) {
+  const contextSettings = canvas.getContext('webgpu')!;
+  contextSettings.configure({
     device: device,
     format: navigator.gpu.getPreferredCanvasFormat(),
     alphaMode: 'premultiplied',
   })
+  return contextSettings;
+}
 
-  //we loop here unless we need this data somehwere else as well
-  //TODO: Make them use caps so its clear they are like magic number placeholders
-  let verCountLd = 0;
-  let indCountLd = 0;
-  let instancesCountLd = 0;
-  let instanceGroupCount = loadedModel.size;
-  loadedModel.forEach((instanceGroup) => {
-    verCountLd += instanceGroup.baseGeometry.vertexArray.byteLength;
-    indCountLd += instanceGroup.baseGeometry.indexArray.byteLength;
-    instancesCountLd += instanceGroup.instances ? instanceGroup.instances.length : instanceGroup.transparentInstances.length;
-  })
+function initializeInputAndCamera(canvas: HTMLCanvasElement) {
+  const cameraSettings = {
+    eye: vec3.create(2., 2.2, 8.0),
+    target: vec3.create(0., 0.8, 2.)
+  }
+  const camera = new OrbitCamera({ position: cameraSettings.eye })
+  const inputHandler = createInputHandler(window, canvas);
 
-  //Buffer creation
-  const drawIndirectCommandBuffer = device.createBuffer({
-    size: (loadedModel.size * 5) * 4,
+  return { camera, inputHandler }
+}
+
+function calculateModelAttributesAndShortInstanceGroups(loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances?: [], transparentInstances?: [] }>) {
+  const modelAttributes = { verCount: 0, indCount: 0, instancesCount: 0, instanceGroupsCount: loadedModel.size };
+  const shortedInstanceGroups = function(): Map<any, any> {
+    const transparentInstanceGroups = new Map();
+    const opaqueInstanceGroups = new Map();
+
+    loadedModel.forEach((instanceGroup, _i) => {
+      modelAttributes.verCount += instanceGroup.baseGeometry.vertexArray.byteLength;
+      modelAttributes.indCount += instanceGroup.baseGeometry.indexArray.byteLength;
+      modelAttributes.instancesCount += instanceGroup.instances ? instanceGroup.instances.length : instanceGroup.transparentInstances!.length;
+      instanceGroup.instances ? opaqueInstanceGroups.set(_i, instanceGroup) : transparentInstanceGroups.set(_i, instanceGroup);
+    })
+    return new Map([...opaqueInstanceGroups, ...transparentInstanceGroups]);
+  }();
+
+  return { modelAttributes, shortedInstanceGroups };
+}
+
+function createBuffers(bufferManager: BufferManager, modelAttributes: { verCount, indCount, instancesCount, instanceGroupsCount, meshCount }) {
+
+  bufferManager.createBuffer('drawIndirectCommandBuffer', {
+    size: (modelAttributes.instanceGroupsCount * 5) * 4,
     usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    label: 'drawCommandBuffer'
+    label: 'drawIndirectCommandBuffer'
   })
 
-  const mouseCoordsBuffer = device.createBuffer({
-    size: VEC4_SIZE,
+  bufferManager.createBuffer('mouseCoordsBuffer', {
+    size: RENDERER_CONSTANTS.VEC4_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   })
 
-  const computeHoverOutputBuffer = device.createBuffer({
-    size: loadedModel.size * 4,
+  bufferManager.createBuffer('computeHoverOutputBuffer', {
+    size: modelAttributes.instanceGroupsCount * 4,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
-  const computeSelectedIdStagingBuffer = device.createBuffer({
-    size: VEC4_SIZE,
+  bufferManager.createBuffer('computeSelectedIdStagingBuffer', {
+    size: RENDERER_CONSTANTS.VEC4_SIZE,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
   })
 
-  const computeSelectedIdBuffer = device.createBuffer({
-    size: VEC4_SIZE,
+  bufferManager.createBuffer('computeSelectedIdBuffer', {
+    size: RENDERER_CONSTANTS.VEC4_SIZE,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
-  const ifcModelVertexBuffer = device.createBuffer({
-    size: verCountLd,
+  bufferManager.createBuffer('ifcModelVertexBuffer', {
+    size: modelAttributes.verCount,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     label: 'instanceVertexBuffer'
   })
 
-  const ifcModelIndexBuffer = device.createBuffer({
-    size: indCountLd,
+  bufferManager.createBuffer('ifcModelIndexBuffer', {
+    size: modelAttributes.indCount,
     usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     label: 'instanceIndexBuffer'
   })
 
-  const gBufferConstantsUniform = device.createBuffer({
-    size: MAT4_SIZE + MAT4_SIZE,
+  bufferManager.createBuffer('gBufferConstantsUniform', {
+    size: RENDERER_CONSTANTS.MAT4_SIZE + RENDERER_CONSTANTS.MAT4_SIZE,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     label: 'gBufferConstantUniformsBuffer'
   })
 
-  const gBufferInstanceOffsetBuffer = device.createBuffer({
-    size: ALIGNED_SIZE * loadedModel.size,
+  bufferManager.createBuffer('gBufferInstanceUniformsOffsetsBuffer', {
+    size: RENDERER_CONSTANTS.ALIGNED_SIZE * modelAttributes.instanceGroupsCount,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    label: 'gBufferInstanceOffsetBuffer'
+    label: 'gBufferInstanceUniformsOffsetsBuffer'
   })
 
-  //TODO: Rename properly, no constants , AND THERE IS ACTUALLY A TIPO LMAOOO
-  const gBufferInstnaceConstantsBuffer = device.createBuffer({
-    size: instancesCountLd * (ALIGNED_SIZE / 2),
+  bufferManager.createBuffer('gBufferInstanceUniformsBuffer', {
+    size: modelAttributes.instancesCount * (RENDERER_CONSTANTS.ALIGNED_SIZE / 2),
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-    label: 'gBufferInstnaceConstantsBuffer'
+    label: 'gBufferInstanceUniformsBuffer'
   })
 
-  const gBufferMeshUniformBuffer = device.createBuffer({
-    size: meshCount * VEC4_SIZE,
+  bufferManager.createBuffer('gBufferMeshUniformBuffer', {
+    size: modelAttributes.meshCount * RENDERER_CONSTANTS.VEC4_SIZE,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     label: 'gBufferMeshUniformBuffer'
   })
 
-  const typeStatesBuffer = device.createBuffer({
-    size: ALIGNED_SIZE,
+  bufferManager.createBuffer('typeStatesBuffer', {
+    size: RENDERER_CONSTANTS.ALIGNED_SIZE,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     label: 'typeStatesBuffer'
   })
 
-  //G Buffer textures
-  //TODO: Rename has highlight
-  const positionTexture = device.createTexture({
-    size: { width: canvasW, height: canvasH },
+}
+
+function createTextures(device: GPUDevice, canvas: HTMLCanvasElement) {
+  const highlightTexture = device.createTexture({
+    size: { width: canvas.width, height: canvas.height },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'rgba16float',
   });
 
   const albedoTexture = device.createTexture({
-    size: { width: canvasW, height: canvasH },
+    size: { width: canvas.width, height: canvas.height },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'rgba8unorm',
   });
   const normalTexture = device.createTexture({
-    size: { width: canvasW, height: canvasH },
+    size: { width: canvas.width, height: canvas.height },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'rgba16float',
   });
   const idTexture = device.createTexture({
-    size: { width: canvasW, height: canvasH },
+    size: { width: canvas.width, height: canvas.height },
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     format: 'r32uint'
   })
 
   const depthTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
+    size: { width: canvas.width, height: canvas.height },
     format: 'depth24plus',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   });
 
+  return { highlightTexture, albedoTexture, normalTexture, idTexture, depthTexture };
+}
 
-  //Bind groups - layouts
+function createBindGroupLayouts(device: GPUDevice) {
+
   const gBufferConstantsBindGroupLayout = device.createBindGroupLayout({
     entries: [{
       binding: 0,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-      buffer: { type: 'uniform', minBindingSize: MAT4_SIZE + MAT4_SIZE }
+      buffer: { type: 'uniform', minBindingSize: RENDERER_CONSTANTS.MAT4_SIZE + RENDERER_CONSTANTS.MAT4_SIZE }
     }],
     label: 'gBufferConstantsBindGroupLayout'
   });
 
-  const gBufferInstanceOffsetBindGroupLayout = device.createBindGroupLayout({
+  const gBufferInstanceUniformsOffsetsBindGroupLayout = device.createBindGroupLayout({
     entries: [{
       binding: 0,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: 'uniform', hasDynamicOffset: true }
     }],
-    label: 'gBufferInstanceOffsetBindGroupLayout'
+    label: 'gBufferInstanceUniformsOffsetsBindGroupLayout'
   });
 
-  const gBufferInstanceConstantFormsBindGroupLayout = device.createBindGroupLayout({
+
+  const gBufferInstanceUniformsBindGroupLayout = device.createBindGroupLayout({
     entries: [{
       binding: 0,
       visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: 'read-only-storage' },
     }],
-    label: 'gBufferInstanceConstantFormsBindGroupLayout'
+    label: 'gBufferInstanceUniformsBindGroupLayout'
   });
+
 
   const gBufferMeshUniformBindgroupLayout = device.createBindGroupLayout({
     entries: [{
@@ -209,7 +454,6 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
     ]
   })
-
 
   const mainPassBindgroupLayout = device.createBindGroupLayout({
     entries: [
@@ -256,7 +500,7 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
       binding: 1,
       visibility: GPUShaderStage.COMPUTE,
       buffer: {
-        type: 'uniform', minBindingSize: VEC4_SIZE
+        type: 'uniform', minBindingSize: RENDERER_CONSTANTS.VEC4_SIZE
       }
     },
     {
@@ -276,59 +520,64 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     ]
   })
 
-  //Bind groups - creation
+  return { gBufferConstantsBindGroupLayout, gBufferInstanceUniformsOffsetsBindGroupLayout, gBufferInstanceUniformsBindGroupLayout, gBufferMeshUniformBindgroupLayout, mainPassBindgroupLayout, computeHoverBindGroupLayout }
+
+}
+
+function createBindGroups(device: GPUDevice, bufferManager: BufferManager, textures, bindGroupLayouts) {
+
   const gBufferConstantsBindGroup = device.createBindGroup({
-    layout: gBufferConstantsBindGroupLayout,
+    layout: bindGroupLayouts.gBufferConstantsBindGroupLayout,
     entries: [{
       binding: 0,
       resource: {
-        buffer: gBufferConstantsUniform,
-        size: MAT4_SIZE + MAT4_SIZE,
+        buffer: bufferManager.getBuffer('gBufferConstantsUniform'),
+        size: RENDERER_CONSTANTS.MAT4_SIZE + RENDERER_CONSTANTS.MAT4_SIZE,
         offset: 0
       }
     }]
   });
 
-  const gBufferInstanceOffsetBindGroup = device.createBindGroup({
-    layout: gBufferInstanceOffsetBindGroupLayout,
+  const gBufferInstanceUniformsOffsetsBindGroup = device.createBindGroup({
+    layout: bindGroupLayouts.gBufferInstanceUniformsOffsetsBindGroupLayout,
     entries: [{
       binding: 0,
       resource: {
-        buffer: gBufferInstanceOffsetBuffer,
-        size: ALIGNED_SIZE,
+        buffer: bufferManager.getBuffer('gBufferInstanceUniformsOffsetsBuffer'),
+        size: RENDERER_CONSTANTS.ALIGNED_SIZE,
         offset: 0
       }
     }]
   });
 
-  const gBufferInstanceConstantsBindGroup = device.createBindGroup({
-    layout: gBufferInstanceConstantFormsBindGroupLayout,
+  const gBufferInstanceUniformsBindGroup = device.createBindGroup({
+    layout: bindGroupLayouts.gBufferInstanceUniformsBindGroupLayout,
     entries: [{
       binding: 0,
       resource: {
-        buffer: gBufferInstnaceConstantsBuffer,
+        buffer: bufferManager.getBuffer('gBufferInstanceUniformsBuffer'),
       }
     }]
   });
 
   const gBufferMeshUniformBindGroup = device.createBindGroup({
-    layout: gBufferMeshUniformBindgroupLayout,
+    layout: bindGroupLayouts.gBufferMeshUniformBindgroupLayout,
     entries: [{
       binding: 0,
       resource: {
-        buffer: gBufferMeshUniformBuffer,
+        buffer: bufferManager.getBuffer('gBufferMeshUniformBuffer'),
       }
     },
     {
       binding: 1,
       resource: {
-        buffer: typeStatesBuffer,
+        buffer: bufferManager.getBuffer('typeStatesBuffer'),
       }
     },
     {
       binding: 2,
       resource: {
-        buffer: computeSelectedIdBuffer
+        buffer: bufferManager.getBuffer('computeSelectedIdBuffer')
       },
     }
     ]
@@ -336,121 +585,67 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
 
   const mainPassBindgroup = device.createBindGroup({
-    layout: mainPassBindgroupLayout,
+    layout: bindGroupLayouts.mainPassBindgroupLayout,
     entries: [
-      { binding: 0, resource: positionTexture.createView() },
-      { binding: 1, resource: normalTexture.createView() },
-      { binding: 2, resource: albedoTexture.createView() },
-      { binding: 3, resource: idTexture.createView() },
+      { binding: 0, resource: textures.highlightTexture.createView() },
+      { binding: 1, resource: textures.normalTexture.createView() },
+      { binding: 2, resource: textures.albedoTexture.createView() },
+      { binding: 3, resource: textures.idTexture.createView() },
     ]
   })
 
   const computeHoverBindGroup = device.createBindGroup({
-    layout: computeHoverBindGroupLayout,
+    layout: bindGroupLayouts.computeHoverBindGroupLayout,
     entries: [
       {
         binding: 0,
         resource: {
-          buffer: computeHoverOutputBuffer,
+          buffer: bufferManager.getBuffer('computeHoverOutputBuffer'),
         }
       },
       {
         binding: 1,
         resource: {
-          buffer: mouseCoordsBuffer,
+          buffer: bufferManager.getBuffer('mouseCoordsBuffer'),
           offset: 0,
-          size: VEC4_SIZE,
+          size: RENDERER_CONSTANTS.VEC4_SIZE,
         }
       },
       {
         binding: 2,
-        resource: idTexture.createView()
+        resource: textures.idTexture.createView()
       },
       {
         binding: 3,
         resource: {
-          buffer: computeSelectedIdBuffer,
+          buffer: bufferManager.getBuffer('computeSelectedIdBuffer'),
         }
       }
     ]
   })
 
-  //Pipelines
-  const mainPassPipeline = function() {
-    const mainPassPipelineLayout: GPURenderPipelineDescriptor = {
-      vertex: {
-        module: mainPassShaderModule,
-        entryPoint: 'vertex_main',
-      },
-      fragment: {
-        module: mainPassShaderModule,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: navigator.gpu.getPreferredCanvasFormat(),
-            blend: {
-              color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
-                operation: "add",
-              },
-              alpha: {
-                srcFactor: "one",
-                dstFactor: "one-minus-src-alpha",
-                operation: "add",
-              }
-            }
-          }],
-      },
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [mainPassBindgroupLayout],
+  return { gBufferConstantsBindGroup, gBufferInstanceUniformsOffsetsBindGroup, gBufferInstanceUniformsBindGroup, gBufferMeshUniformBindGroup, mainPassBindgroup, computeHoverBindGroup }
+}
+
+function createPipelines(pipelineManager: PipelineManager, device: GPUDevice, bindGroupLayouts) {
+
+  pipelineManager.createRenderPipeline('mainPassPipeline', {
+    vertex: {
+      module: device.createShaderModule({
+        code: mainPassShaderCode
       })
-    }
-    return device.createRenderPipeline(mainPassPipelineLayout)
-  }();
-
-  const gBufferPipeline = function() {
-    const vertexBuffers: GPUVertexBufferLayout[] = [{
-      attributes: [{
-        shaderLocation: 0,
-        offset: 0,
-        format: 'float32x3',
-      }, {
-        shaderLocation: 1,
-        offset: 4 * 3,
-        format: 'float32x3'
-      }],
-      arrayStride: 4 * (3 + 3),
-      stepMode: 'vertex'
-    }];
-
-    const pipelineDescriptor: GPURenderPipelineDescriptor = {
-      vertex: {
-        module: ifcModelshaderModule,
-        entryPoint: 'vertex_main',
-        buffers: vertexBuffers,
-      },
-      fragment: {
-        module: ifcModelshaderModule,
-        entryPoint: 'fragment_main',
-        targets: [{
-          format: 'rgba16float',
-          blend: {
-            color: {
-              srcFactor: 'src-alpha',
-              dstFactor: 'one-minus-src-alpha',
-              operation: 'add',
-            },
-            alpha: {
-              srcFactor: 'one',
-              dstFactor: 'one-minus-src-alpha',
-              operation: 'add',
-            }
-          }
-        },
-        { format: 'rgba16float' }, // worldNormal
+      ,
+      entryPoint: 'vertex_main',
+    },
+    fragment: {
+      module: device.createShaderModule({
+        code: mainPassShaderCode
+      })
+      ,
+      entryPoint: 'fragment_main',
+      targets: [
         {
-          format: 'rgba8unorm',
+          format: navigator.gpu.getPreferredCanvasFormat(),
           blend: {
             color: {
               srcFactor: "src-alpha",
@@ -463,364 +658,153 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
               operation: "add",
             }
           }
-        }, // albedo
-        { format: 'r32uint' }, // Ids ,
-        ]
-      },
-      primitive: {
-        topology: 'triangle-list',
-        frontFace: 'ccw',
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus',
-        depthBias: -100,
-        depthBiasSlopeScale: 1,
-        depthBiasClamp: 0,
-      },
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [gBufferConstantsBindGroupLayout, gBufferInstanceConstantFormsBindGroupLayout, gBufferInstanceOffsetBindGroupLayout, gBufferMeshUniformBindgroupLayout],
-      }),
-    }
-    return device.createRenderPipeline(pipelineDescriptor);
-  }();
-
-  const computeHoverPipeline = function() {
-    const computePipeline = device.createComputePipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [computeHoverBindGroupLayout],
-      }),
-      compute: {
-        module: computeHoverShaderModule,
-        entryPoint: 'main'
-      }
+        }],
+    },
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [bindGroupLayouts.mainPassBindgroupLayout],
     })
-    return computePipeline;
-  }();
+  })
 
-  //Render passes
+  pipelineManager.createRenderPipeline('gBufferPipeline', {
+    vertex: {
+      module: device.createShaderModule({
+        code: gBufferShaderCode,
+      })
+      ,
+      entryPoint: 'vertex_main',
+      buffers: [{
+        attributes: [{
+          shaderLocation: 0,
+          offset: 0,
+          format: 'float32x3',
+        }, {
+          shaderLocation: 1,
+          offset: 4 * 3,
+          format: 'float32x3'
+        }],
+        arrayStride: 4 * (3 + 3),
+        stepMode: 'vertex'
+      }],
+    },
+    fragment: {
+      module: device.createShaderModule({
+        code: gBufferShaderCode,
+      })
+      ,
+      entryPoint: 'fragment_main',
+      targets: [{
+        format: 'rgba16float',
+        blend: {
+          color: {
+            srcFactor: 'src-alpha',
+            dstFactor: 'one-minus-src-alpha',
+            operation: 'add',
+          },
+          alpha: {
+            srcFactor: 'one',
+            dstFactor: 'one-minus-src-alpha',
+            operation: 'add',
+          }
+        }
+      },
+      { format: 'rgba16float' }, // worldNormal
+      {
+        format: 'rgba8unorm',
+        blend: {
+          color: {
+            srcFactor: "src-alpha",
+            dstFactor: "one-minus-src-alpha",
+            operation: "add",
+          },
+          alpha: {
+            srcFactor: "one",
+            dstFactor: "one-minus-src-alpha",
+            operation: "add",
+          }
+        }
+      }, // albedo
+      { format: 'r32uint' }, // Ids ,
+      ]
+    },
+    primitive: {
+      topology: 'triangle-list',
+      frontFace: 'ccw',
+    },
+    depthStencil: {
+      depthWriteEnabled: true,
+      depthCompare: 'less-equal',
+      format: 'depth24plus',
+      depthBias: -100,
+      depthBiasSlopeScale: 1,
+      depthBiasClamp: 0,
+    },
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [bindGroupLayouts.gBufferConstantsBindGroupLayout, bindGroupLayouts.gBufferInstanceUniformsBindGroupLayout, bindGroupLayouts.gBufferInstanceUniformsOffsetsBindGroupLayout, bindGroupLayouts.gBufferMeshUniformBindgroupLayout],
+    }),
+  })
+
+
+  pipelineManager.createComputePipeline('computeHoverPipeline', {
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [bindGroupLayouts.computeHoverBindGroupLayout],
+    }),
+    compute: {
+      module: device.createShaderModule({
+        code: computeForwardCode,
+      })
+      ,
+      entryPoint: 'main'
+    }
+  })
+
+}
+
+function createPassDescriptors(contextSettings, textures) {
+
   const clearColor = { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
   const mainPassDescriptor: GPURenderPassDescriptor = {
     colorAttachments: [{
       clearValue: clearColor,
       loadOp: 'clear',
       storeOp: 'store',
-      view: context.getCurrentTexture().createView()
+      view: contextSettings.getCurrentTexture().createView()
     }]
   }
 
   const ifcModelPassDescriptor: GPURenderPassDescriptor = {
     colorAttachments: [
       {
-        view: positionTexture.createView(),
+        view: textures.highlightTexture.createView(),
         clearValue: clearColor,
         loadOp: 'clear',
         storeOp: 'store',
       },
       {
-        view: normalTexture.createView(),
+        view: textures.normalTexture.createView(),
         clearValue: clearColor,
         loadOp: 'clear',
         storeOp: 'store',
       },
       {
-        view: albedoTexture.createView(),
+        view: textures.albedoTexture.createView(),
         clearValue: clearColor,
         loadOp: 'clear',
         storeOp: 'store',
       },
       {
-        view: idTexture.createView(),
+        view: textures.idTexture.createView(),
         clearValue: clearColor,
         loadOp: 'clear',
         storeOp: 'store',
       },
     ],
     depthStencilAttachment: {
-      view: depthTexture.createView(),
+      view: textures.depthTexture.createView(),
       depthClearValue: 1.,
       depthLoadOp: 'clear',
       depthStoreOp: 'store',
     },
   };
-
-  //TODO: Cleanup and/or encapsulation
-  let _offsetGeo = 0;
-  let _offsetIndex = 0;
-  let _offsetIndexBytes = 0;
-  let _offsetGeoBytes = 0;
-  let testI = 0;
-  let instanceI = 0;
-  let instanceGroupI = 0;
-  let firstInstanceOffset = 0;
-  const proMat = getProjectionMatrix(canvasW, canvasH);
-  let vertexDataArray = new Float32Array(verCountLd / 4);
-  const drawCommandsArray = new Uint32Array(loadedModel.size * 5);
-  let indexDataArray = new Uint32Array(indCountLd / 4);
-  let instanceDataArray = new ArrayBuffer(instancesCountLd * (16 * 4 + 3 * 4 + 1 * 4 + 12 * 4));
-  let instanceDataArrayFloatView = new Float32Array(instanceDataArray);
-  let instanceDataArrayUintView = new Uint32Array(instanceDataArray);
-  let instanceUniformOffsetDataArray = new Uint32Array((loadedModel.size * ALIGNED_SIZE) / 4);
-  let meshLookUpIdOffsetIndex = 0;
-  const transparentInstancesGroups = new Map();
-
-  const priorityDrawCalls = new Map();
-  let standardDrawCalls = new Map();
-
-  //TODO: should also be renamed and refactored
-  const processInstanceGroups = (instanceGroup, _i) => {
-    standardDrawCalls.set(_i, { offset: instanceGroupI });
-    const instanceType = instanceGroup.instances ? 'instances' : 'transparentInstances';
-    drawCommandsArray[testI] = instanceGroup.baseGeometry.indexArray.length; //Index count
-    drawCommandsArray[testI + 1] = instanceGroup[instanceType].length; //Instance count
-    drawCommandsArray[testI + 2] = _offsetIndex; //Index buffer offset was  _offsetIndex
-    drawCommandsArray[testI + 3] = _offsetGeo//base vertex? was _offsetGeo
-    drawCommandsArray[testI + 4] = 0;  //first instance? was firstInstanceOffset
-
-    instanceUniformOffsetDataArray[instanceGroupI * (ALIGNED_SIZE / 4)] = firstInstanceOffset;
-    vertexDataArray.set(instanceGroup.baseGeometry.vertexArray, _offsetGeoBytes / 4);
-    indexDataArray.set(instanceGroup.baseGeometry.indexArray, _offsetIndexBytes / 4);
-    firstInstanceOffset += instanceGroup[instanceType].length;
-
-    instanceGroup[instanceType].forEach((instance: { color, flatTransform, lookUpId, meshExpressId }) => {
-      let currOffset = ((16 * 4 + 3 * 4 + 1 * 4 + 12 * 4) / 4) * instanceI;
-      instanceDataArrayFloatView.set(instance.flatTransform, currOffset);
-      instanceDataArrayFloatView.set([instance.color.x, instance.color.y, instance.color.z, instance.color.w], currOffset + 16)
-      instanceDataArrayUintView.set([(instance.lookUpId) + meshLookUpIdOffsets[meshLookUpIdOffsetIndex]], currOffset + 16 + 4);
-      if (instance.lookUpId + 1 == meshLookUpIdOffsets[meshLookUpIdOffsetIndex + 1] && instanceI != 0) meshLookUpIdOffsetIndex += 1;
-      instanceI++;
-    })
-
-    _offsetGeo += instanceGroup.baseGeometry.vertexArray.length / 6;
-    _offsetIndexBytes += instanceGroup.baseGeometry.indexArray.byteLength;
-    _offsetIndex += instanceGroup.baseGeometry.indexArray.length;
-    _offsetGeoBytes += instanceGroup.baseGeometry.vertexArray.byteLength
-    instanceGroupI++;
-    testI += 5;
-
-  }
-
-  //TODO: refactor, since adding priority draw calls this is even more unnecessary 
-  loadedModel.forEach((instanceGroup, _i) => {
-    if (!instanceGroup.instances) {
-      transparentInstancesGroups.set(_i, instanceGroup);
-      return;
-    }
-    processInstanceGroups(instanceGroup, _i);
-  })
-
-  transparentInstancesGroups.forEach((instanceGroup, _i) => processInstanceGroups(instanceGroup, _i))
-
-  console.log(standardDrawCalls)
-
-  //Static buffers write
-  device.queue.writeBuffer(gBufferInstanceOffsetBuffer, 0, instanceUniformOffsetDataArray)
-  device.queue.writeBuffer(gBufferInstnaceConstantsBuffer, 0, instanceDataArray)
-  device.queue.writeBuffer(drawIndirectCommandBuffer, 0, drawCommandsArray);
-  device.queue.writeBuffer(gBufferConstantsUniform, 64, proMat);
-  device.queue.writeBuffer(ifcModelVertexBuffer, 0, vertexDataArray);
-  device.queue.writeBuffer(ifcModelIndexBuffer, 0, indexDataArray);
-
-  console.log(instancesCountLd)
-
-  let typesStatesBufferStrides = new Map<any, any>;
-  {
-    const meshGroupServiceHandler = getMeshGroupsHandler();
-    let fetchedMeshLookUpIdsList = [];
-    let fetchedMeshUniformsDataArray = [];
-    const multiTypeMeshes = new Map<any, any>;
-    let multiTypeMeshesTypesState = [];
-    meshGroupServiceHandler.getMeshGroups().then(({ meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, typeIdInstanceGroupId }) => {
-      console.log(meshLookUpIdsList, meshTypeIdMap, typesIdStateMap, typeIdInstanceGroupId);
-      fetchedMeshLookUpIdsList = meshLookUpIdsList;
-      const meshUniformsDataArray = new Uint32Array((4) * meshLookUpIdsList.length);
-      //TODO: Should be Uint not float
-      const typeStatesDataArray = new Float32Array(typesIdStateMap.size * 4); //uint State + vec3 color for now 
-
-      let i = 0;
-      typesIdStateMap.forEach((typeIdObject) => {
-        multiTypeMeshes.set(typeIdObject.stringType, []);
-        const offset = (i * 4)
-        typeStatesDataArray.set([...typeIdObject.color], offset);
-        typeStatesDataArray.set([typeIdObject.state], offset + 3);
-        typesStatesBufferStrides.set(typeIdObject.typeId, { stride: offset * 4, stringType: typeIdObject.stringType })
-        i++
-      })
-
-      //TODO: Need to change the way we handle multitypes
-      for (let i = 0; i < meshLookUpIdsList.length; i++) {
-        const offset = ((4 * 4) / 4) * i;
-        const meshExpressId = meshLookUpIdsList[i];
-        const meshTypesString = meshTypeIdMap.get(meshExpressId);
-        let meshTypeId = MESHTYPEUNDEFINED;
-
-        if (meshTypesString) {
-          const meshTypesStrings = meshTypeIdMap.get(meshExpressId).split(',');
-          if (meshTypesStrings.length > 1) {
-            for (let typeString of meshTypesStrings) {
-              multiTypeMeshes.get(typeString)?.push(offset + 1);
-            }
-          }
-
-          meshTypeId = typesIdStateMap.get(meshTypesStrings[0]).typeId;
-        }
-
-        meshUniformsDataArray[offset] = meshExpressId;
-        meshUniformsDataArray[offset + 1] = meshTypeId;
-        meshUniformsDataArray[offset + 2] = 1;
-        meshUniformsDataArray[offset + 3] = 1;
-      }
-
-
-      fetchedMeshUniformsDataArray = meshUniformsDataArray;
-      device.queue.writeBuffer(typeStatesBuffer, 0, typeStatesDataArray)
-      device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, meshUniformsDataArray)
-
-      actionHandler.onMepSystemChange((value) => {
-        let testType = typesStatesBufferStrides.get(value);
-
-        standardDrawCalls = new Map([...standardDrawCalls, ...priorityDrawCalls]);
-        priorityDrawCalls.clear();
-        typeIdInstanceGroupId.get(value).forEach((instanceGroupId) => {
-          const drawCallData = standardDrawCalls.get(instanceGroupId);
-          priorityDrawCalls.set(instanceGroupId, drawCallData);
-          standardDrawCalls.delete(instanceGroupId);
-        });
-
-        multiTypeMeshesTypesState = [];
-        multiTypeMeshes.get(testType.stringType).forEach((multiTypeMeshOffset) => {
-          multiTypeMeshesTypesState.push({ multiTypeMeshOffset, value });
-          device.queue.writeBuffer(gBufferMeshUniformBuffer, (multiTypeMeshOffset * 4), Uint32Array.of(value));
-        })
-
-        const updatedTypeStatesDataArray = new Float32Array(typeStatesDataArray);
-        updatedTypeStatesDataArray[testType.stride / 4 + 3] = 1;
-        device.queue.writeBuffer(typeStatesBuffer, 0, updatedTypeStatesDataArray)
-      });
-    })
-
-    meshGroupServiceHandler.treeListSelectionOnChange((toggledMeshesIdSet: Set<number>) => {
-      for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
-        fetchedMeshUniformsDataArray[e + 2] = 1;
-        if (toggledMeshesIdSet.has(fetchedMeshUniformsDataArray[e])) {
-          fetchedMeshUniformsDataArray[e + 2] = 0;
-        }
-      }
-      device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
-
-      //TODO: Refactor multitypes
-      multiTypeMeshesTypesState.forEach((typeState) => {
-        device.queue.writeBuffer(gBufferMeshUniformBuffer, (typeState.multiTypeMeshOffset * 4), Uint32Array.of(typeState.value));
-      })
-    })
-
-    meshGroupServiceHandler.treeListHoverOnChange((hoveredMeshesIdSet: Set<number>) => {
-      for (let e = 0; e < fetchedMeshUniformsDataArray.length; e += 4) {
-        if (hoveredMeshesIdSet.has(fetchedMeshUniformsDataArray[e])) {
-          fetchedMeshUniformsDataArray[e + 3] = 0;
-        } else {
-          fetchedMeshUniformsDataArray[e + 3] = 1;
-        }
-      }
-      device.queue.writeBuffer(gBufferMeshUniformBuffer, 0, fetchedMeshUniformsDataArray);
-
-      //TODO: Refactor multitypes
-      multiTypeMeshesTypesState.forEach((typeState) => {
-        device.queue.writeBuffer(gBufferMeshUniformBuffer, (typeState.multiTypeMeshOffset * 4), Uint32Array.of(typeState.value));
-      })
-    })
-
-  }
-
-  let previousSelectedId = 0;
-  const updateId = (currentId: number) => {
-    if (currentId != previousSelectedId) {
-      actionHandler.updateSelectedId(currentId);
-      previousSelectedId = currentId;
-    }
-  }
-
-  let lastFrameMS = Date.now()
-  const fpsElem = document.querySelector("#fps")!;
-  let frameCount = 0;
-  //TODO: Refine the render function
-  async function render() {
-
-    frameCount++;
-    const now = Date.now();
-    const deltaTime = (now - lastFrameMS) / 1000;
-    const commandEnconder = device.createCommandEncoder();
-    lastFrameMS = now;
-    const fps = 1 / deltaTime;             // compute frames per second
-    fpsElem.textContent = fps.toFixed(1);
-
-    let canvasView = context.getCurrentTexture().createView();
-    mainPassDescriptor.colorAttachments[0].view = canvasView;
-
-    let cameraMatrix = camera.update(deltaTime, { ...inputHandler() });
-    device.queue.writeBuffer(gBufferConstantsUniform, 0, cameraMatrix);
-
-    const gBufferPassEncoder = commandEnconder.beginRenderPass(ifcModelPassDescriptor);
-    gBufferPassEncoder.setPipeline(gBufferPipeline);
-
-
-    gBufferPassEncoder.setBindGroup(0, gBufferConstantsBindGroup);
-    gBufferPassEncoder.setBindGroup(1, gBufferInstanceConstantsBindGroup);
-    gBufferPassEncoder.setBindGroup(3, gBufferMeshUniformBindGroup);
-    gBufferPassEncoder.setVertexBuffer(0, ifcModelVertexBuffer, 0);
-    gBufferPassEncoder.setIndexBuffer(ifcModelIndexBuffer, 'uint32', 0);
-
-    priorityDrawCalls.forEach((drawCall) => {
-      gBufferPassEncoder.setBindGroup(2, gBufferInstanceOffsetBindGroup, [drawCall.offset * ALIGNED_SIZE]);
-      gBufferPassEncoder.drawIndexedIndirect(drawIndirectCommandBuffer, drawCall.offset * (4 * 5));
-    });
-
-    standardDrawCalls.forEach((drawCall) => {
-      gBufferPassEncoder.setBindGroup(2, gBufferInstanceOffsetBindGroup, [drawCall.offset * ALIGNED_SIZE]);
-      gBufferPassEncoder.drawIndexedIndirect(drawIndirectCommandBuffer, drawCall.offset * (4 * 5));
-    });
-
-    gBufferPassEncoder.end();
-
-    const computePassEncoder = commandEnconder.beginComputePass();
-    computePassEncoder.setPipeline(computeHoverPipeline);
-    device.queue.writeBuffer(mouseCoordsBuffer, 0, Float32Array.of(inputHandler().mouseHover.x, inputHandler().mouseHover.y, inputHandler().mouseClickState.clickReg, inputHandler().mouseClickState.lastClickReg));
-    computePassEncoder.setBindGroup(0, computeHoverBindGroup);
-    computePassEncoder.dispatchWorkgroups(Math.ceil(1000 / 64));
-    computePassEncoder.end();
-
-    const mainPassEncoder = commandEnconder.beginRenderPass(mainPassDescriptor);
-    mainPassEncoder.setPipeline(mainPassPipeline);
-    mainPassEncoder.setBindGroup(0, mainPassBindgroup);
-    mainPassEncoder.draw(3)
-    mainPassEncoder.end();
-
-    //This just handles reading the data on JS for testing purposes
-    commandEnconder.copyBufferToBuffer(
-      computeSelectedIdBuffer,
-      0,
-      computeSelectedIdStagingBuffer,
-      0,
-      VEC4_SIZE,
-    )
-
-    device.queue.submit([commandEnconder.finish()]);
-
-    await computeSelectedIdStagingBuffer.mapAsync(
-      GPUMapMode.READ,
-      0,
-      VEC4_SIZE
-    );
-
-    const copyArrayBuffer = computeSelectedIdStagingBuffer.getMappedRange(0, VEC4_SIZE);
-    const data = copyArrayBuffer.slice();
-    //console.log(new Float32Array(data));
-    updateId(new Float32Array(data)[0])
-    computeSelectedIdStagingBuffer.unmap();
-
-    requestAnimationFrame(render);
-  }
-  requestAnimationFrame(render);
-
+  return { mainPassDescriptor, ifcModelPassDescriptor }
 }
+

@@ -69,7 +69,7 @@ export function createActionsHandler() {
     updateSelectedId,
     getSelectedId,
     createLeftActions,
-    onChange: events.subscribe, //TODO: For code refactoring unite events on a service prob,
+    onChange: events.subscribe,
     onMepSystemChange: mepSystemChangeEvent.subscribe,
   };
 
