@@ -1,4 +1,5 @@
 import { IfcAPI, Color, ms, IFCUNITASSIGNMENT, IFCRELCONNECTSPORTTOELEMENT, IFCFLOWSEGMENT, IFCDISTRIBUTIONPORT, IFCRELCONNECTSPORTS, IFCCABLESEGMENTTYPE, IFCRELDEFINESBYTYPE, IFCPIPESEGMENTTYPE, IFCPIPEFITTINGTYPE, IFCDUCTSEGMENT, IFCDUCTSEGMENTTYPE, IFCENERGYCONVERSIONDEVICETYPE, IFCENERGYCONVERSIONDEVICE, IFCCABLESEGMENT, IFCFLOWMOVINGDEVICETYPE, IFCFLOWMOVINGDEVICE, IFCFLOWTERMINAL, IFCFLOWTERMINALTYPE } from 'web-ifc';
+import { mat4, vec4 } from 'wgpu-matrix';
 
 export interface parsedIfcObject {
   geometries: parsedGeometryData[],
@@ -33,7 +34,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
   const time = ms() - start;
   let lookUpId = 0;
   const instanceMap = new Map();
-  const meshIdInstancesIdMap = new Map();
   const instanceExpressIds: number[] = [];
 
   console.log(`Opening model took ${time} ms`);
@@ -47,7 +47,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
       instanceExpressIds.push(mesh.expressID);
-      //meshIdInstancesIdMap.set(lookUpId, { expressId: mesh.expressID })
 
       for (let i = 0; i < numGeoms; i++) {
         let placedGeom = mesh.geometries.get(i);
@@ -90,7 +89,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       lookUpId++;
     });
 
-    console.log(instanceMap)
     postMessage({ msg: 'geometryReady', instanceMap, meshCount: instanceExpressIds.length });
 
 
@@ -107,13 +105,15 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           let processedPropertySets = propertySets.length ? {} : null;
           for (let i = 0; i < propertySets.length; i++) {
             const currentSet = propertySets[i];
-            const setName = currentSet.Name.value;
-            processedPropertySets[setName] = [];
+            const properties = currentSet.HasProperties ? currentSet.HasProperties : currentSet.Quantities;
 
-            const properties = currentSet.HasProperties;
-            for (let e = 0; e < propertySets[i].HasProperties.length; e++) {
+            const setName = currentSet.Name ? currentSet.Name.value : `Property set ${i}`;
+            processedPropertySets[setName] = [];
+            for (let e = 0; e < properties.length; e++) {
               const property = properties[e];
-              processedPropertySets[setName].push({ [property.Name.value]: property.NominalValue.value });
+              const valKey = Object.keys(property).find((propKeyName) => propKeyName.toLowerCase().includes('value'));
+              const propertyValue = property[valKey]?.value
+              processedPropertySets[setName].push({ [property.Name.value]: propertyValue });
             }
           }
           itemPropertiesMap.set(expressId, { processedPropertySets, itemProperties })
@@ -219,8 +219,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       }
 
       //Test remove
-      meshTypeIdMap.set(78884, 'Electrical');
-      meshTypeIdMap.set(79017, 'Electrical');
+      meshTypeIdMap.set(647, 'Electrical');
+      meshTypeIdMap.set(646, 'Electrical');
     }
 
     //Model tree structure
@@ -233,9 +233,11 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       }
     }
 
-    const modelTreeStructure = mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true));
+    const modelTreeStructure = [mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true))];
     const generalProperties = { instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
+  } else {
+    console.error("Error loading model, aborting")
   }
 
   ifcAPI.CloseModel(modelID);
@@ -265,7 +267,7 @@ function generateGeometryHash(vertexArray: Float32Array) {
 }
 
 function getMepHighlightColor(index) {
-  const colors = [[1, 0, 1], [0, 0, 1], [0, 1, 1], [1, 0, 0], [1, 1, 0], [0, 1, 0]];
+  const colors = [[1, 0, 1], [0, 1, 1], [1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 1, 0]];
 
   if (index < colors.length) {
     return colors[index];

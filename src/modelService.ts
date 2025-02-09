@@ -11,19 +11,8 @@ let cachedResults = {
 };
 
 let createMeshDataResolve;
-const createMeshDataPromise = new Promise<{ meshUniformsDataArray: Uint32Array }>(resolve => {
-  createMeshDataResolve = resolve;
-})
-
 let createTypesDataResolve;
-const createTypesDataPromise = new Promise<{ typesDataArray: Float32Array, typesBufferStrides: Map<any, any> }>(resolve => {
-  createTypesDataResolve = resolve;
-})
-
 let createDataEventsResolve;
-const createDataEventsPromise = new Promise(resolve => {
-  createDataEventsResolve = resolve;
-})
 
 export function createModelService({ instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure, typeIdInstanceGroupId, dataEvents }) {
   cachedResults = {
@@ -108,13 +97,21 @@ export function createMultitypeMeshesHandler() {
 export function getMeshGroupsHandler() {
   return {
     getMeshUniformsData: () => {
-      return createMeshDataPromise;
+      return new Promise<{ meshUniformsDataArray: Uint32Array }>(resolve => {
+        createMeshDataResolve = resolve;
+      })
+        ;
     },
     getTypeData: () => {
-      return createTypesDataPromise
+      return new Promise<{ typesDataArray: Float32Array, typesBufferStrides: Map<any, any> }>(resolve => {
+        createTypesDataResolve = resolve;
+      })
     },
     getDataEvents: () => {
-      return createDataEventsPromise
+      return new Promise(resolve => {
+        createDataEventsResolve = resolve;
+      })
+
     },
     getStoredMeshData: () => {
       return storedMeshData

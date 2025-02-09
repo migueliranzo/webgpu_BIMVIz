@@ -66,12 +66,41 @@ body{
   color: red
 }
 
+.disabled{
+  pointer-events: none;
+  cursor: default;
+  background: #e5e5e5;
+}
+
+.disabled > img{
+filter: invert(91%) sepia(0%) saturate(411%) hue-rotate(199deg) brightness(76%) contrast(99%);
+
+}
+
 #rightSidePropertiesPanel .item-properties-title, .item-propertySets-title {
   font-size: 18px;
   font-weight: 500;
-  padding-top: 0.7rem;
-  padding-bottom: 0.3rem;
+  padding-top: 0.5rem;
 }
+
+#fileSelector{
+  position: fixed;
+  bottom: 0;
+  right: calc(50dvw - 200px);
+  width: 400px;
+  text-align: center;
+}
+
+#fileSelector input{
+    background: white;
+    border: 1px solid #ff0e4c;
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: #ff0e4c;
+    margin-bottom: 10px;
+    max-width: 400px;
+}
+
 
 div.property-set-header{
   background: #fa7276; 
@@ -84,8 +113,9 @@ div.property-set-header{
     box-shadow: -2px 0px 11px 0px rgba(0, 0, 0, 0.42);
     border-top-left-radius: 5px;
     margin: 10px 0px 0px 10px;
-    padding: 5px 25px 10px 10px;
+    padding: 0px 25px 10px 10px;
   background-color: white;
+  width: 100%;
 }
 
 .property-value{
@@ -124,7 +154,6 @@ border-top-right-radius: 5px;
 }
 
 #leftSideTreeStructurePanel div {
-  cursor: pointer;
 }
 
 #leftSideTreeStructurePanel button{
@@ -206,9 +235,11 @@ box-shadow: 0px 0px 8px 5px rgba(0, 0, 0, 0.1), 0 2px 20px 18px rgba(0, 0, 0, 0.
 .nodeContainer p{
     padding: 0px;
     margin: 0px;
+  font-size: 14px;
 }
 
 .nodeHeader{
+  cursor: pointer;
 display: flex;
     gap: 1.2rem;
     align-items: center;

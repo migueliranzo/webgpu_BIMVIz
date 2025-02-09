@@ -4,9 +4,24 @@ import mainPassShaderCode from './shaders/PASS_MAIN.wgsl?raw';
 import { getMVPMatrix, getProjectionMatrix, getViewMatrix, getWorldMatrix } from './math_utils.ts';
 import { createInputHandler } from './deps/input.ts';
 import { OrbitCamera } from './deps/camera.ts';
-import { vec3, mat4 } from 'wgpu-matrix'
+import { vec3, mat4, vec4 } from 'wgpu-matrix'
 import { getMeshGroupsHandler, createMultitypeMeshesHandler } from './modelService.ts';
 import { processInstanceGroups } from './dataManager.ts';
+
+export function getRenderContextHandler() {
+  let activeDeviceInstance: GPUDevice;
+  async function setupRenderContextAndRender(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
+    stopRendering = true;
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    activeDeviceInstance?.destroy();
+    activeDeviceInstance = device;
+    stopRendering = false;
+    renderer(device, canvas, loadedModel, actionHandler, meshCount, meshLookUpIdOffsets);
+  }
+  return {
+    setupRenderContextAndRender,
+  };
+}
 
 const RENDERER_CONSTANTS = {
   ALIGNED_SIZE: 256,
@@ -15,6 +30,11 @@ const RENDERER_CONSTANTS = {
   VEC3_SIZE: 4 * 3,
   VEC2_SIZE: 4 * 2,
 } as const;
+
+//Rendering flags
+let isReadingBuffer = false;
+let stopRendering = false;
+
 
 class BufferManager {
   private device: GPUDevice;
@@ -60,16 +80,14 @@ class PipelineManager {
   }
 }
 
-
-export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
-
+function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map<number, { baseGeometry: { indexArray, vertexArray }, instances: [] }>, actionHandler: any, meshCount: number, meshLookUpIdOffsets: number[]) {
   //Init context and managers
   const contextSettings = initializeContext(device, canvas);
   const bufferManager = new BufferManager(device);
   const pipelineManager = new PipelineManager(device);
   const { camera, inputHandler } = initializeInputAndCamera(canvas);
   const { modelAttributes, shortedInstanceGroups } = calculateModelAttributesAndShortInstanceGroups(loadedModel);
-  actionHandler.createLeftActions(camera);
+  actionHandler.updateActionsCameraRef(camera);
 
   //Create webgpu resources
   createBuffers(bufferManager, { ...modelAttributes, meshCount });
@@ -192,6 +210,37 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     }
   });
 
+  //Setup async hover Id buffer reading
+  const stagingBufferA = 'computeSelectedIdStagingBufferA';
+  const stagingBufferB = 'computeSelectedIdStagingBufferB';
+  let currentStagingBuffer = stagingBufferA;
+
+  async function readSelectedId() {
+    if (isReadingBuffer || stopRendering) return;
+    isReadingBuffer = true;
+
+    try {
+      const buffer = bufferManager.getBuffer(currentStagingBuffer);
+      await buffer.mapAsync(
+        GPUMapMode.READ,
+        0,
+        RENDERER_CONSTANTS.VEC4_SIZE
+      );
+
+      const copyArrayBuffer = buffer.getMappedRange(0, RENDERER_CONSTANTS.VEC4_SIZE);
+      const data = copyArrayBuffer.slice();
+      buffer.unmap();
+
+      currentStagingBuffer = currentStagingBuffer === stagingBufferA ? stagingBufferB : stagingBufferA;
+
+      updateId(new Float32Array(data)[0]);
+    } catch (error) {
+      console.error('Error reading buffer:', error);
+    } finally {
+      isReadingBuffer = false;
+    }
+  }
+
   //Setup object hover selection
   let previousSelectedId = 0;
   const updateId = (currentId: number) => {
@@ -201,23 +250,23 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     }
   }
 
-  //Setup fps counter
-  let lastFrameMS = Date.now()
   const fpsElem = document.querySelector("#fps")!;
+  let lastFrameMS = Date.now()
 
   //Render loop
   async function renderLoop() {
+    if (stopRendering) return;
     const now = Date.now();
     const deltaTime = (now - lastFrameMS) / 1000;
     const commandEnconder = device.createCommandEncoder();
     lastFrameMS = now;
     const fps = 1 / deltaTime;
-    fpsElem.textContent = fps.toFixed(1);
+    fpsElem.textContent = 'FPS: ' + fps.toFixed(0);
 
     const canvasView = contextSettings.getCurrentTexture().createView();
     passDescriptors.mainPassDescriptor.colorAttachments[0].view = canvasView;
 
-    device.queue.writeBuffer(bufferManager.getBuffer('gBufferConstantsUniform'), 0, camera.update(deltaTime, { ...inputHandler() }));
+    device.queue.writeBuffer(bufferManager.getBuffer('gBufferConstantsUniform'), 0, camera.update({ ...inputHandler() }));
 
     const gBufferPassEncoder = commandEnconder.beginRenderPass(passDescriptors.ifcModelPassDescriptor);
     gBufferPassEncoder.setPipeline(pipelineManager.getPipeline('gBufferPipeline'));
@@ -240,17 +289,20 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
 
     gBufferPassEncoder.end();
 
-    const computePassEncoder = commandEnconder.beginComputePass();
-    computePassEncoder.setPipeline(pipelineManager.getPipeline('computeHoverPipeline'));
-    device.queue.writeBuffer(bufferManager.getBuffer('mouseCoordsBuffer'), 0, Float32Array.of(
-      inputHandler().mouseHover.x,
-      inputHandler().mouseHover.y,
-      inputHandler().mouseClickState.clickReg,
-      inputHandler().mouseClickState.lastClickReg)
-    );
-    computePassEncoder.setBindGroup(0, bindGroups.computeHoverBindGroup);
-    computePassEncoder.dispatchWorkgroups(1);
-    computePassEncoder.end();
+    if (!inputHandler().analog.touching) {
+      const computePassEncoder = commandEnconder.beginComputePass();
+      computePassEncoder.setPipeline(pipelineManager.getPipeline('computeHoverPipeline'));
+      device.queue.writeBuffer(bufferManager.getBuffer('mouseCoordsBuffer'), 0, Float32Array.of(
+        inputHandler().mouseHover.x,
+        inputHandler().mouseHover.y,
+        inputHandler().mouseClickState.clickReg,
+        inputHandler().mouseClickState.lastClickReg)
+      );
+
+      computePassEncoder.setBindGroup(0, bindGroups.computeHoverBindGroup);
+      computePassEncoder.dispatchWorkgroups(1);
+      computePassEncoder.end();
+    }
 
     const mainPassEncoder = commandEnconder.beginRenderPass(passDescriptors.mainPassDescriptor);
     mainPassEncoder.setPipeline(pipelineManager.getPipeline('mainPassPipeline'));
@@ -258,28 +310,19 @@ export function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedMod
     mainPassEncoder.draw(3)
     mainPassEncoder.end();
 
-    commandEnconder.copyBufferToBuffer(
-      bufferManager.getBuffer('computeSelectedIdBuffer'),
-      0,
-      bufferManager.getBuffer('computeSelectedIdStagingBuffer'),
-      0,
-      RENDERER_CONSTANTS.VEC4_SIZE,
-    )
+    if (!isReadingBuffer) {
+      commandEnconder.copyBufferToBuffer(
+        bufferManager.getBuffer('computeSelectedIdBuffer'),
+        0,
+        bufferManager.getBuffer(currentStagingBuffer),
+        0,
+        RENDERER_CONSTANTS.VEC4_SIZE,
+      )
+    }
 
     device.queue.submit([commandEnconder.finish()]);
 
-    await bufferManager.getBuffer('computeSelectedIdStagingBuffer').mapAsync(
-      GPUMapMode.READ,
-      0,
-      RENDERER_CONSTANTS.VEC4_SIZE
-    );
-
-    const copyArrayBuffer = bufferManager.getBuffer('computeSelectedIdStagingBuffer').getMappedRange(0, RENDERER_CONSTANTS.VEC4_SIZE);
-    const data = copyArrayBuffer.slice();
-    //console.log(new Float32Array(data));
-    updateId(new Float32Array(data)[0])
-    bufferManager.getBuffer('computeSelectedIdStagingBuffer').unmap();
-
+    readSelectedId();
     requestAnimationFrame(renderLoop);
   }
   requestAnimationFrame(renderLoop);
@@ -344,7 +387,12 @@ function createBuffers(bufferManager: BufferManager, modelAttributes: { verCount
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   })
 
-  bufferManager.createBuffer('computeSelectedIdStagingBuffer', {
+  bufferManager.createBuffer('computeSelectedIdStagingBufferA', {
+    size: RENDERER_CONSTANTS.VEC4_SIZE,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+  })
+
+  bufferManager.createBuffer('computeSelectedIdStagingBufferB', {
     size: RENDERER_CONSTANTS.VEC4_SIZE,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
   })
@@ -793,7 +841,8 @@ function createPassDescriptors(contextSettings, textures) {
       loadOp: 'clear',
       storeOp: 'store',
       view: contextSettings.getCurrentTexture().createView()
-    }]
+    }],
+    label: 'mainPassDescriptor'
   }
 
   const ifcModelPassDescriptor: GPURenderPassDescriptor = {

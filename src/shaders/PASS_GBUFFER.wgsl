@@ -70,7 +70,7 @@ fn vertex_main(
     output.position = select(
         output.position,
         vec4f(0.0),
-        meshData.treeVisibilityToggle == 0
+        meshData.treeVisibilityToggle == 0 && meshData.meshId != 0
     );
 
     output.albedo = select(

@@ -24,7 +24,7 @@ export function getProjectionMatrix(width: number, height: number, fov: number =
   const fovInRadians = (fov / 180) * Math.PI;
   const aspect = width / height;
   const near = 0.1;
-  const far = 100;
+  const far = 120;
 
   return mat4.perspective(fovInRadians, aspect, near, far);
 }

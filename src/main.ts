@@ -1,9 +1,24 @@
 import { createActionsHandler } from './actions.ts';
-import { renderer } from './renderer.ts'
+import { getRenderContextHandler } from './renderer.ts'
 import { IfcAPI, ms, IFCUNITASSIGNMENT } from 'web-ifc';
 import { setUpRightPanelItemProperties, createItemspropertyarrayhandle, setUpLeftPanelTreeView } from './dataViewModel.ts';
 import { createFileHandler } from './ifcLoader.ts';
 import { createModelService } from './modelService.ts';
+
+//Set up user file loading event
+document.getElementById('inputFileSelector')!.addEventListener(('change'), (e) => {
+  console.log(e)
+  const files = (e.target as HTMLInputElement).files;
+  if (files) {
+    init(files);
+  }
+})
+
+
+const actionHandler = createActionsHandler();
+
+//Context handler
+const renderContextHandler = getRenderContextHandler();
 
 //WebGPU Setup
 async function initializeWebGPU(): Promise<any> {
@@ -25,10 +40,19 @@ async function initializeWebGPU(): Promise<any> {
 }
 
 //Model Loading
-async function loadModelFiles(): Promise<Uint8Array[]> {
-  const fileBuffer = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Eng-MEP.ifc')
+async function loadModelFiles(files?: FileList): Promise<Uint8Array[]> {
+  if (files && files.length > 0) {
+    return Promise.all(
+      Array.from(files).map(file =>
+        file.arrayBuffer().then(buffer => new Uint8Array(buffer))
+      )
+    );
+  }
+
+  //Sample file loading
+  const fileBuffer = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Eng-MEP-Optimized.ifc')
     .then((response) => response.arrayBuffer());
-  const fileBufferArch = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Arch.ifc')
+  const fileBufferArch = await fetch('ifc/NBU_Duplex/NBU_Duplex-Apt_Arch-Optimized.ifc')
     .then((response) => response.arrayBuffer());
 
   return [
@@ -57,7 +81,7 @@ async function processModels(filesToParse: Uint8Array[]) {
     meshLookUpIdOffsets.push(merged.parsedModelMeshCount);
     return {
       parsedModelInstancesMap: new Map([...merged.parsedModelInstancesMap, ...obj.parsedModelInstancesMap]),
-      parsedModelMeshCount: merged.parsedModelMeshCount + obj.parsedModelMeshCount
+      parsedModelMeshCount: merged.parsedModelMeshCount + obj.parsedModelMeshCount,
     };
   });
 
@@ -66,7 +90,7 @@ async function processModels(filesToParse: Uint8Array[]) {
     parsedModelMeshCount,
     meshLookUpIdOffsets,
     modelItemsPropertiesPromises,
-    modelPropertiesPromises
+    modelPropertiesPromises,
   };
 }
 
@@ -94,13 +118,14 @@ function processGeneralProperties(mergedModelGeneralProperties, parsedModelInsta
   return { ...mergedModelGeneralProperties, typeIdInstanceGroupId };
 }
 
-//View Models setup
-async function setupViewModels(
+//Html views setup
+async function setupHtmlViewsAndMergeGeneralProperties(
   parsedModelInstancesMap: any,
   modelItemsPropertiesPromises: Promise<any>[],
   modelPropertiesPromises: Promise<any>[],
   actionHandler: any
 ) {
+
   //Process item properties
   const modelItemsProperties = await Promise.all(modelItemsPropertiesPromises);
   const { itemPropertiesMap, typesList } = modelItemsProperties.reduce((merged, obj) => {
@@ -116,10 +141,13 @@ async function setupViewModels(
     return merged;
   });
 
+  console.log(itemPropertiesMap)
+
   //Property handlers setup
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(itemPropertiesMap);
   const viewModelHandler = setUpRightPanelItemProperties(typesList);
   actionHandler.onSelectedIdChange((newSelectedId: number) => {
+    console.log(newSelectedId)
     viewModelHandler.updateRightSidePropsSync(itemspropertyarrayhandle.getItemProperties(newSelectedId));
   });
 
@@ -142,46 +170,35 @@ async function setupViewModels(
     });
     return merged;
   })
-
   actionHandler.setUpMepSelectionPanel(mergedModelGeneralProperties.typesIdStateMap)
   return processGeneralProperties(mergedModelGeneralProperties, parsedModelInstancesMap);
 }
 
-async function init() {
+
+async function init(files?: FileList) {
   const start = ms();
 
-  //Initialize WebGPU context
+  //Init WebGPU context
   const { device, canvas } = await initializeWebGPU();
 
   //Process file models
-  const filesToParse = await loadModelFiles();
-  const {
-    parsedModelInstancesMap,
-    parsedModelMeshCount,
-    meshLookUpIdOffsets,
-    modelItemsPropertiesPromises,
-    modelPropertiesPromises
-  } = await processModels(filesToParse);
+  const filesToParse = await loadModelFiles(files);
+  const { parsedModelInstancesMap, parsedModelMeshCount, meshLookUpIdOffsets, modelItemsPropertiesPromises, modelPropertiesPromises } = await processModels(filesToParse);
 
   //Action handler and renderer setup
-  const actionHandler = createActionsHandler();
-  console.log("🖌️", ms() - start);
-  renderer(
+  console.log(`🖌️ ${((ms() - start) / 1000).toPrecision(3)}s`);
+
+  await renderContextHandler.setupRenderContextAndRender(
     device,
     canvas,
     parsedModelInstancesMap,
     actionHandler,
     parsedModelMeshCount,
-    meshLookUpIdOffsets
-  );
+    meshLookUpIdOffsets,
+  )
 
   //View models and properties setup
-  const mergedModelGeneralProperties = await setupViewModels(
-    parsedModelInstancesMap,
-    modelItemsPropertiesPromises,
-    modelPropertiesPromises,
-    actionHandler
-  );
+  const mergedModelGeneralProperties = await setupHtmlViewsAndMergeGeneralProperties(parsedModelInstancesMap, modelItemsPropertiesPromises, modelPropertiesPromises, actionHandler);
 
   //Tree view and model service setup
   const leftPanelTreeEvents = setUpLeftPanelTreeView(mergedModelGeneralProperties.modelTreeStructure);
