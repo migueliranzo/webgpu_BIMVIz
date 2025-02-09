@@ -11,12 +11,12 @@
       <div style='position: fixed' id='fps'></div>
       <canvas width='800px' height='600px' style='backgroundColor: transparent' id='canvas_main_render_target'></canvas>
 
-      <div class='p-2' style='position:absolute; top: 0; left: -20; padding-top: 3rem; '>
+      <div class='p-2' style='position:absolute; top: 0; left: -20; padding-top: 3rem;'>
         <div class='flex flex-col gap-5' >
        <div id='changeViewBtn' style='background: none' class='justify-center align-center flex rounded-md  shadow-md actionBtn transition-all' >
 
   <div class="changeViewBtnGhost">
-        <div class="changeViewBtnGhostCube">
+        <div class="changeViewBtnGhostCube" style='transform: matrix3d(0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1)'>
             <div class="changeViewBtnGhostCubeFace setFrontView"><img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
             <div class="changeViewBtnGhostCubeFace setBackView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
             <div  class="changeViewBtnGhostCubeFace setRightView"> <img data-v-e9b83e6c="" srcset="https://img.icons8.com/?size=24&id=1QRMaMzd37W0&format=png 1x, https://img.icons8.com/?size=48&id=1QRMaMzd37W0&format=png 2x" width="24" height="24" alt="Binoculars icon" class="loaded"></div>
@@ -38,16 +38,16 @@
 
         </div>
       </div>
-        <div id='rightSidePropertiesPanelContainer' style='max-width: 350px; height:calc(100dvh - 3rem); top: 3rem; position: absolute; right: 0; overflow: hidden;'>
+        <div id='rightSidePropertiesPanelContainer' style='width: 350px; height:calc(100dvh - 3rem); top: 3rem; position: absolute; right: 0; overflow: hidden; pointer-events: none'>
         <div id='rightSidePropertiesPanel' class='transition-all shadow-md px-4' style='height: 100%; display: flex; overflow: hidden; font-size: 13px; width: 100%;'>
         </div>
       </div>
 
           
-         <div id='leftSideTreeStructurePanel' style='position: absolute; top: 200px; background: white; padding:10px 0px 10px 10px; height: calc(-222px + 100vh);  width: 400px'>
-           <div style='font-size: 19px;
+         <div id='leftSideTreeStructurePanel' style='position: absolute; top: 220px; background: white; padding:0px 0px 10px 0px; height: calc(-231px + 100vh);  width: 400px'>
+           <div style='font-size: 18px;
     font-weight: 500;
-    padding: 0.5rem;'>Model tree</div>
+    padding: 0.5rem 0.5rem 0 0.5rem;'>Model tree view</div>
         <div id='leftSideTreeStructurePanelScrollView' style='
     overflow-y: scroll;
     height: calc(100% - 52px);
@@ -55,6 +55,9 @@
         </div>
       </div>
 
+    <div id='fileSelector'>
+      <input id='inputFileSelector' type='file' accept='.ifc'/>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

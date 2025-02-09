@@ -27,6 +27,11 @@ function createLocalEventEmitter(eventName: string) {
 
 function setUpMepSelectionPanel(typesIdStateMap, mepSelectionDialog: HTMLDivElement, changeMepModuleBtn: HTMLElement, mepSystemChangeEvent, toggledMepSystems: Set<any>) {
   mepSelectionDialog.addEventListener(('click'), (e) => e.stopPropagation())
+  mepSelectionDialog.replaceChildren();
+  if (!typesIdStateMap.size) {
+    changeMepModuleBtn.classList.add('disabled');
+    return;
+  }
 
   const mepPanelContainer = document.createElement('div');
   mepPanelContainer.classList.add('mepPanelContainer')
@@ -100,37 +105,39 @@ export function createActionsHandler() {
   const viewBtn = {
     clickCount: 0,
   }
+  let cameraRef = null;
 
   const LEFTSIDETREESTRUCTUREPANELELEMENT = document.getElementById('leftSideTreeStructurePanel');
   const changeMepModuleBtn = document.getElementById('changeMepModuleBtn')!;
   const changeViewBtn = document.getElementById('changeViewBtn')!;
   const toggleProjectViewBtn = document.getElementById('toggleProjectThreeViewBtn')!;
 
+  changeMepModuleBtn.addEventListener(('click'), (e) => {
+    e.stopPropagation();
+    mepSelectionDialog.classList.toggle('hidden');
+    changeMepModuleBtn.classList.toggle('active');
+    deselectTreeView();
+  })
 
-  const createLeftActions = function(camera: OrbitCamera) {
-    changeViewBtn.addEventListener(('click'), (e) => {
-      e.stopPropagation()
-      const prevClickCount = viewBtn.clickCount ? viewBtn.clickCount - 1 : viewModes.length;
-      const clickCount = viewBtn.clickCount++;
-      document.querySelector(`.${viewModes[(prevClickCount % viewModes.length)]}`).classList.remove('cubeFaceClicked');
-      camera[viewModes[clickCount % viewModes.length]]();
-      document.querySelector('.changeViewBtnGhostCube')!.style.transform = `matrix3d(${viewModesMatrix[clickCount % viewModesMatrix.length]})`;
-      document.querySelector(`.${viewModes[clickCount % viewModes.length]}`)?.classList.add('cubeFaceClicked');
-    })
+  toggleProjectViewBtn.addEventListener(('click'), (e) => {
+    e.stopPropagation();
+    LEFTSIDETREESTRUCTUREPANELELEMENT!.classList.toggle('hidden');
+    toggleProjectViewBtn.classList.toggle('active')
+    deselectMepPanel();
+  })
 
-    changeMepModuleBtn.addEventListener(('click'), (e) => {
-      e.stopPropagation();
-      mepSelectionDialog.classList.toggle('hidden');
-      changeMepModuleBtn.classList.toggle('active');
-      deselectTreeView();
-    })
+  changeViewBtn.addEventListener(('click'), (e) => {
+    e.stopPropagation()
+    const prevClickCount = viewBtn.clickCount ? viewBtn.clickCount - 1 : viewModes.length;
+    const clickCount = viewBtn.clickCount++;
+    document.querySelector(`.${viewModes[(prevClickCount % viewModes.length)]}`).classList.remove('cubeFaceClicked');
+    cameraRef[viewModes[clickCount % viewModes.length]]();
+    document.querySelector('.changeViewBtnGhostCube')!.style.transform = `matrix3d(${viewModesMatrix[clickCount % viewModesMatrix.length]})`;
+    document.querySelector(`.${viewModes[clickCount % viewModes.length]}`)?.classList.add('cubeFaceClicked');
+  })
 
-    toggleProjectViewBtn.addEventListener(('click'), (e) => {
-      e.stopPropagation();
-      LEFTSIDETREESTRUCTUREPANELELEMENT!.classList.toggle('hidden');
-      toggleProjectViewBtn.classList.toggle('active')
-      deselectMepPanel();
-    })
+  const updateActionsCameraRef = function(camera: OrbitCamera) {
+    cameraRef = camera;
   }
 
   function deselectTreeView() {
@@ -147,8 +154,10 @@ export function createActionsHandler() {
   const updateSelectedId = function(newSelectedId: number) {
     if (newSelectedId == -1 || newSelectedId == 0) {
       document.getElementById('rightSidePropertiesPanel')!.classList.add('translateFullyRigthX');
+      document.getElementById('rightSidePropertiesPanelContainer')!.style.pointerEvents = 'none';
     } else {
       document.getElementById('rightSidePropertiesPanel')!.classList.remove('translateFullyRigthX');
+      document.getElementById('rightSidePropertiesPanelContainer')!.style.pointerEvents = 'all';
       onSelectedIdChangeEventEmitter.emit(newSelectedId);
     }
 
@@ -158,7 +167,7 @@ export function createActionsHandler() {
   return {
     viewBtnState: viewBtn,
     updateSelectedId,
-    createLeftActions,
+    updateActionsCameraRef,
     onSelectedIdChange: onSelectedIdChangeEventEmitter.subscribe,
     onMepSystemChange: mepSystemChangeEvent.subscribe,
     setUpMepSelectionPanel: (typesIdStateMap) => setUpMepSelectionPanel(typesIdStateMap, mepSelectionDialog, changeMepModuleBtn, mepSystemChangeEvent, toggledMepSystems)

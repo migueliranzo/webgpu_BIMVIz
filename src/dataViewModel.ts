@@ -6,7 +6,6 @@ interface treeNode {
 }
 
 export function createItemspropertyarrayhandle(items: Map<any, any>) {
-
   return {
     getItemProperties(id) {
       return { ...items.get(id) };
@@ -22,11 +21,10 @@ const modelTreeChildParentMap = new Map();
 const toggledEventEmitter = createLocalEventEmitter('toggledEventEmitter');
 const hoverToggledEventEmitter = createLocalEventEmitter('hoverToggledEventEmitter');
 const hoveredEventEmitter = createLocalEventEmitter('hoveredEventEmitter');
-const LEFTSIDETREESTRUCTUREPANELELEMENT = document.getElementById('leftSideTreeStructurePanel');
 const LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW = document.getElementById('leftSideTreeStructurePanelScrollView');
 
-
 export function setUpLeftPanelTreeView(modelTreeStructure) {
+  LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW!.replaceChildren();
   modelTreeStructure.forEach((level) => {
     const treeNodeIconsMap = new Map();
     createTreeNode(level, LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW, 0, 0, treeNodeIconsMap);

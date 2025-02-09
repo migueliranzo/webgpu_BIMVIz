@@ -7,7 +7,7 @@ import Input from './input';
 // Common interface for camera implementations
 export default interface Camera {
   // update updates the camera using the user-input and returns the view matrix.
-  update(delta_time: number, input: Input): Mat4;
+  update(input: Input): Mat4;
 
   // The camera matrix.
   // This is the inverse of the view matrix.
@@ -96,8 +96,10 @@ class CameraBase {
 export class OrbitCamera extends CameraBase implements Camera {
   private distance = 0;
   private readonly worldUp = vec3.fromValues(0, 1, 0);
-  private target = vec3.fromValues(0, 0, 0);
-  private readonly verticalLimit = 0.01; //0.57 degrees
+  //TODO: Scaling, centering and bound calculation of models.
+  //private target = vec3.fromValues(0, 0, 0);
+  private target = vec3.fromValues(4.4, 1.7, 9.1);
+  private readonly verticalLimit = 0.10;
 
   rotationSpeed = 0.005;
   zoomSpeed = 0.1;
@@ -157,7 +159,7 @@ export class OrbitCamera extends CameraBase implements Camera {
     this.updatePosition();
   }
 
-  update(deltaTime: number, input: Input): Mat4 {
+  update(input: Input): Mat4 {
     const epsilon = 0.0000001;
 
 
@@ -200,6 +202,7 @@ export class OrbitCamera extends CameraBase implements Camera {
     }
 
     if (input.analog.zoom !== 0 && !input.digital.shift) {
+      input.analog.zoom = this.distance < 100 ? input.analog.zoom : input.analog.zoom - 1;
       this.distance *= 1 + input.analog.zoom * this.zoomSpeed;
       this.updatePosition();
     }
