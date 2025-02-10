@@ -49,9 +49,9 @@ async function loadModelFiles(files?: FileList): Promise<Uint8Array[]> {
   }
 
   //Sample file loading
-  const fileBuffer = await fetch('NBU_Duplex/NBU_Duplex-Apt_Eng-MEP-Optimized.ifc')
+  const fileBuffer = await fetch('NBU_Duplex-Apt_Eng-MEP-Optimized.ifc')
     .then((response) => response.arrayBuffer());
-  const fileBufferArch = await fetch('NBU_Duplex/NBU_Duplex-Apt_Arch-Optimized.ifc')
+  const fileBufferArch = await fetch('NBU_Duplex-Apt_Arch-Optimized.ifc')
     .then((response) => response.arrayBuffer());
 
   return [
