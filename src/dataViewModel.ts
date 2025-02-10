@@ -2,6 +2,7 @@ interface treeNode {
   name: string,
   type: string,
   expressId: number,
+  toggleNodeIcon: () => void,
   children: treeNode[]
 }
 
@@ -164,11 +165,10 @@ export function setUpLeftPanelTreeView(modelTreeStructure) {
 }
 
 const RIGHTSIDEPANELELEMENT = document.getElementById('rightSidePropertiesPanel')!;
-export function setUpRightPanelItemProperties(typesList: []) {
+export function setUpRightPanelItemProperties(typesList: any[]) {
 
   const updateRightSidePropsSync = function(itemPropertiesObject: { itemProperties: {}, processedPropertySets: {} }) {
     const htmlList = document.createElement('div');
-    const htmlContainer = document.createElement('div');
     mapPropertiesToHtml(itemPropertiesObject, htmlList);
     htmlList.classList.add('gap-5', 'flex', 'flex-col', 'htmlList');
 
@@ -197,7 +197,7 @@ export function setUpRightPanelItemProperties(typesList: []) {
         propertyValue.innerText = itemProperties[value];
       }
       if (value == 'type') {
-        propertyValue.innerText = typesList.find((type) => type.typeID == itemProperties[value]).typeName;
+        propertyValue.innerText = typesList.find((type: any) => type.typeID == itemProperties[value]).typeName;
       }
 
       propertyRow.appendChild(propertyTitle);

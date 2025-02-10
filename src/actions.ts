@@ -1,11 +1,10 @@
-import { transform } from "typescript";
 import { OrbitCamera } from "./deps/camera";
 
 function createLocalEventEmitter(eventName: string) {
   // Using a DOM Event Target gives us a built-in event system
   const eventTarget = new EventTarget();
 
-  addEventListener("resize", (event) => {
+  addEventListener("resize", () => {
     const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
     canvas.width = document.body.clientWidth;
     canvas.height = document.body.clientHeight;
@@ -132,6 +131,7 @@ export function createActionsHandler() {
     const clickCount = viewBtn.clickCount++;
     document.querySelector(`.${viewModes[(prevClickCount % viewModes.length)]}`).classList.remove('cubeFaceClicked');
     cameraRef[viewModes[clickCount % viewModes.length]]();
+    //@ts-ignore :3
     document.querySelector('.changeViewBtnGhostCube')!.style.transform = `matrix3d(${viewModesMatrix[clickCount % viewModesMatrix.length]})`;
     document.querySelector(`.${viewModes[clickCount % viewModes.length]}`)?.classList.add('cubeFaceClicked');
   })

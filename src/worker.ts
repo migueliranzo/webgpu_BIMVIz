@@ -43,7 +43,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     ifcAPI.GetModelSchema(modelID) == 'IFC4' ||
     ifcAPI.GetModelSchema(modelID) == 'IFC4X3_RC4') {
 
-    ifcAPI.StreamAllMeshes(modelID, (mesh, index, total) => {
+    ifcAPI.StreamAllMeshes(modelID, (mesh) => {
       const numGeoms = mesh.geometries.size();
       const processedGeoms = [];
       instanceExpressIds.push(mesh.expressID);
@@ -128,7 +128,6 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     //Size of processed propertySet 2822555 - 2.8MB
 
     let typesList = ifcAPI.GetAllTypesOfModel(modelID);
-    console.log(itemPropertiesMap)
     postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap, typesList });
 
     const cableSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)

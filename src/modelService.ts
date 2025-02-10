@@ -14,7 +14,7 @@ let createMeshDataResolve;
 let createTypesDataResolve;
 let createDataEventsResolve;
 
-export function createModelService({ instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure, typeIdInstanceGroupId, dataEvents }) {
+export function createModelService({ instanceExpressIds, meshTypeIdMap, typesIdStateMap, typeIdInstanceGroupId, dataEvents }) {
   cachedResults = {
     typeIdInstanceGroupId,
     instanceExpressIds,

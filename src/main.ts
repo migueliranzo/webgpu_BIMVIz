@@ -7,7 +7,6 @@ import { createModelService } from './modelService.ts';
 
 //Set up user file loading event
 document.getElementById('inputFileSelector')!.addEventListener(('change'), (e) => {
-  console.log(e)
   const files = (e.target as HTMLInputElement).files;
   if (files) {
     init(files);
@@ -141,7 +140,6 @@ async function setupHtmlViewsAndMergeGeneralProperties(
     return merged;
   });
 
-  console.log(itemPropertiesMap)
 
   //Property handlers setup
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(itemPropertiesMap);

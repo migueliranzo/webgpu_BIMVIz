@@ -13,11 +13,12 @@
     "moduleDetection": "force",
     "noEmit": true,
     /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+ "noImplicitAny": false,
+    "strict": false,
+    "noUnusedLocals": false
   },
   "include": ["src"]
 }

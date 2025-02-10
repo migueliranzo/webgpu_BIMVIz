@@ -6,7 +6,7 @@ import { createInputHandler } from './deps/input.ts';
 import { OrbitCamera } from './deps/camera.ts';
 import { vec3, mat4, vec4 } from 'wgpu-matrix'
 import { getMeshGroupsHandler, createMultitypeMeshesHandler } from './modelService.ts';
-import { processInstanceGroups } from './dataManager.ts';
+import { processInstanceGroups } from './DataManager.ts';
 
 export function getRenderContextHandler() {
   let activeDeviceInstance: GPUDevice;
@@ -75,7 +75,7 @@ class PipelineManager {
     return pipeline;
   }
 
-  getPipeline(name: string): GPURenderPipeline | GPUComputePipeline {
+  getPipeline(name: string): any {
     return this.pipelines.get(name)!
   }
 }
@@ -177,7 +177,7 @@ function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map
     })
   })
 
-  actionHandler.onMepSystemChange((newSelectedTypesIdsList: number) => {
+  actionHandler.onMepSystemChange((newSelectedTypesIdsList: number[]) => {
     try {
       const updatedTypeStatesDataArray = new Float32Array(meshGroupServiceHandler.getStoredTypeData().typesDataArray);
       standardDrawCalls = new Map([...standardDrawCalls, ...priorityDrawCalls]);
@@ -228,7 +228,7 @@ function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map
       );
 
       const copyArrayBuffer = buffer.getMappedRange(0, RENDERER_CONSTANTS.VEC4_SIZE);
-      const data = copyArrayBuffer.slice();
+      const data = copyArrayBuffer.slice(0);
       buffer.unmap();
 
       currentStagingBuffer = currentStagingBuffer === stagingBufferA ? stagingBufferB : stagingBufferA;

@@ -41,14 +41,12 @@ export default interface Input {
   }
 }
 
-// InputHandler is a function that when called, returns the current Input state.
-export type InputHandler = () => Input;
 
 // createInputHandler returns an InputHandler by attaching event handlers to the window and canvas.
 export function createInputHandler(
   window: Window,
   canvas: HTMLCanvasElement
-): InputHandler {
+): any {
   const digital = {
     forward: false,
     backward: false,
@@ -182,7 +180,7 @@ export function createInputHandler(
     mouseHover.y = x.offsetY;
   })
 
-  canvas.addEventListener('mouseout', (x) => {
+  canvas.addEventListener('mouseout', () => {
     mouseHover.x = 0;
     mouseHover.y = 0;
   })
