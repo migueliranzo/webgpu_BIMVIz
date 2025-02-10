@@ -27,7 +27,7 @@ onmessage = (x) => {
 
 const parseIfcFile = async function(FILE: Uint8Array) {
   const ifcAPI = new IfcAPI();
-  ifcAPI.SetWasmPath("../node_modules/web-ifc/");
+  ifcAPI.SetWasmPath("/");
   await ifcAPI.Init();
   const start = ms();
   const modelID = ifcAPI.OpenModel(FILE, { COORDINATE_TO_ORIGIN: false });
