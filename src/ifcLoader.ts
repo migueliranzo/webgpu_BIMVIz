@@ -56,9 +56,9 @@ export function createFileHandler(FILE) {
     if (resolveCount == 3) {
       myWorker.terminate();
       myWorker.onmessage = null;
-      document.getElementById('inputFileSelector').disabled = false;
+      (document.getElementById('inputFileSelector') as HTMLInputElement).disabled = false;
     } else {
-      document.getElementById('inputFileSelector').disabled = true;
+      (document.getElementById('inputFileSelector') as HTMLInputElement).disabled = true;
     }
   }
 
