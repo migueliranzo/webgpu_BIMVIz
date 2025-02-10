@@ -800,6 +800,7 @@ function createPipelines(pipelineManager: PipelineManager, device: GPUDevice, bi
       ]
     },
     primitive: {
+      cullMode: 'none',
       topology: 'triangle-list',
       frontFace: 'ccw',
     },
@@ -807,9 +808,7 @@ function createPipelines(pipelineManager: PipelineManager, device: GPUDevice, bi
       depthWriteEnabled: true,
       depthCompare: 'less-equal',
       format: 'depth24plus',
-      depthBias: -100,
-      depthBiasSlopeScale: 1,
-      depthBiasClamp: 0,
+      depthBias: 0,
     },
     layout: device.createPipelineLayout({
       bindGroupLayouts: [bindGroupLayouts.gBufferConstantsBindGroupLayout, bindGroupLayouts.gBufferInstanceUniformsBindGroupLayout, bindGroupLayouts.gBufferInstanceUniformsOffsetsBindGroupLayout, bindGroupLayouts.gBufferMeshUniformBindgroupLayout],
