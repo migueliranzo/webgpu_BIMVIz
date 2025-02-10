@@ -394,3 +394,29 @@ background-color: white;
   animation-duration: 1.5s;
   animation-name: fade-color;
 }
+
+
+    #progressTextContainer{
+    font-size: 1.2rem;
+    line-height: 1.5;
+    padding: 0px;
+    margin: 16px 0px 0px;
+  color: white ;
+    }
+
+
+    #progressBackdrop{
+  pointer-events:none; 
+    position: fixed;
+    -webkit-box-align: center;
+    align-items: center;
+    -webkit-box-pack: center;
+    justify-content: center;
+    inset: 0px;
+    background-color: rgba(0 0 0 /20%);
+color: rgb(255, 255, 255);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    }
+

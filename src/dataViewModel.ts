@@ -23,9 +23,12 @@ const toggledEventEmitter = createLocalEventEmitter('toggledEventEmitter');
 const hoverToggledEventEmitter = createLocalEventEmitter('hoverToggledEventEmitter');
 const hoveredEventEmitter = createLocalEventEmitter('hoveredEventEmitter');
 const LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW = document.getElementById('leftSideTreeStructurePanelScrollView');
-
+const LEFTSIDETREESTRUCTUREPANEL = document.getElementById('leftSideTreeStructurePanel');
+const LEFTSIDETOGGLETREEBUTTON = document.getElementById('toggleProjectThreeViewBtn')
 export function setUpLeftPanelTreeView(modelTreeStructure) {
+  LEFTSIDETREESTRUCTUREPANEL.style.display = 'block';
   LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW!.replaceChildren();
+  LEFTSIDETOGGLETREEBUTTON.classList.toggle('active');
   modelTreeStructure.forEach((level) => {
     const treeNodeIconsMap = new Map();
     createTreeNode(level, LEFTSIDETREESTRUCTUREPANELELEMENTSCROLLVIEW, 0, 0, treeNodeIconsMap);

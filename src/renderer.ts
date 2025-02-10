@@ -88,7 +88,6 @@ function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map
   const { camera, inputHandler } = initializeInputAndCamera(canvas);
   const { modelAttributes, shortedInstanceGroups } = calculateModelAttributesAndShortInstanceGroups(loadedModel);
   actionHandler.updateActionsCameraRef(camera);
-
   //Create webgpu resources
   createBuffers(bufferManager, { ...modelAttributes, meshCount });
   const textures = createTextures(device, canvas);
@@ -253,6 +252,7 @@ function renderer(device: GPUDevice, canvas: HTMLCanvasElement, loadedModel: Map
   const fpsElem = document.querySelector("#fps")!;
   let lastFrameMS = Date.now()
 
+
   //Render loop
   async function renderLoop() {
     if (stopRendering) return;
@@ -347,6 +347,7 @@ function initializeInputAndCamera(canvas: HTMLCanvasElement) {
   }
   const camera = new OrbitCamera({ position: cameraSettings.eye })
   const inputHandler = createInputHandler(window, canvas);
+  camera.update({ ...inputHandler(), analog: { zoom: 25 } })
 
   return { camera, inputHandler }
 }

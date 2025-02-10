@@ -119,7 +119,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           itemPropertiesMap.set(expressId, { processedPropertySets, itemProperties })
         })
       );
-      console.log((i + chunk.length) / instanceExpressIds.length);
+      postMessage({ msg: 'itemPropertiesProgress', progress: ((i + chunk.length) / instanceExpressIds.length) * 100 })
+
     }
 
 
@@ -130,6 +131,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
     let typesList = ifcAPI.GetAllTypesOfModel(modelID);
     postMessage({ msg: 'itemPropertiesReady', itemPropertiesMap, typesList });
 
+    postMessage({ msg: 'generalPropertiesProgress', progress: 0 });
     const cableSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCCABLESEGMENTTYPE)
     const pipeSegmentsTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPESEGMENTTYPE)
     const pipeFittingTypesLineIds = ifcAPI.GetLineIDsWithType(modelID, IFCPIPEFITTINGTYPE)
@@ -166,6 +168,8 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       })
     }
 
+    postMessage({ msg: 'generalPropertiesProgress', progress: 25 });
+
     for (let energyConversionTypesLineId of energyConversionLineIds) {
       let energyConversionTypesLineObject = ifcAPI.GetLine(modelID, energyConversionTypesLineId);
       let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, energyConversionTypesLineObject.expressID);
@@ -184,6 +188,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       electricalSegmentsLineObjects.push(cableObject.expressID)
     }
 
+    postMessage({ msg: 'generalPropertiesProgress', progress: 50 });
 
     for (let defineByTypeLineId of defineByTypeLineIds) {
       const defineByTypeLineObject = ifcAPI.GetLine(modelID, defineByTypeLineId);
@@ -217,6 +222,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
         }
       }
 
+
       //Test remove
       meshTypeIdMap.set(647, 'Electrical');
       meshTypeIdMap.set(646, 'Electrical');
@@ -232,8 +238,11 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       }
     }
 
+    postMessage({ msg: 'generalPropertiesProgress', progress: 89 });
     const modelTreeStructure = [mapTree(await ifcAPI.properties.getSpatialStructure(modelID, true))];
     const generalProperties = { instanceExpressIds, meshTypeIdMap, typesIdStateMap, modelTreeStructure };
+
+    postMessage({ msg: 'generalPropertiesProgress', progress: 100 });
     postMessage({ msg: 'generalPropertiesReady', generalProperties });
   } else {
     console.error("Error loading model, aborting")

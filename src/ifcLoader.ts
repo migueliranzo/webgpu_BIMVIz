@@ -20,6 +20,9 @@ export function createFileHandler(FILE) {
     generalPropertiesResolve = resolve;
   })
 
+  const progressBackdrop = document.getElementById('progressBackdrop');
+  const progressTextContainer = document.getElementById('progressTextContainer');
+
   myWorker.onmessage = (x) => {
     switch (x.data.msg) {
       case 'geometryReady': {
@@ -37,11 +40,35 @@ export function createFileHandler(FILE) {
         itemPropertiesResolve({ itemPropertiesMap: x.data.itemPropertiesMap, typesList: x.data.typesList })
         break;
       }
+      case 'itemPropertiesProgress': {
+        progressTextContainer.innerText = `Loading objects props... ${x.data.progress.toFixed(0)}%`;
+        updateProgressPanel(x.data.progress);
+        break;
+      }
+      case 'generalPropertiesProgress': {
+        progressTextContainer.innerText = `Loading model props... ${x.data.progress.toFixed(0)}%`;
+        updateProgressPanel(x.data.progress);
+        break;
+      }
+
     }
 
     if (resolveCount == 3) {
       myWorker.terminate();
       myWorker.onmessage = null;
+      document.getElementById('inputFileSelector').disabled = false;
+    } else {
+      document.getElementById('inputFileSelector').disabled = true;
+    }
+  }
+
+  function updateProgressPanel(progress) {
+    if (progress > 99) {
+      progressBackdrop.style.inset = 'unset';
+      progressBackdrop.style.display = 'none';
+    } else {
+      progressBackdrop.style.inset = '0px';
+      progressBackdrop.style.display = 'flex';
     }
   }
 
@@ -56,4 +83,5 @@ export function createFileHandler(FILE) {
     }
   })
 }
+
 
