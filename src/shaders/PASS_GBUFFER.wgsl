@@ -60,13 +60,6 @@ fn vertex_main(
     output.hightlight = vec4(0.0);
     output.id = meshData.meshId;
 
-    let isDefaultColor = dot(output.albedo, output.albedo) == 4.0;
-    output.albedo = select(
-        output.albedo,
-        vec4f(0.7, 0.7, 0.7, 1.0),
-        isDefaultColor
-    );
-
     output.position = select(
         output.position,
         vec4f(0.0),
@@ -90,11 +83,15 @@ fn vertex_main(
     let isHovered = selectedID[2] == f32(meshData.meshId);
     let isSelected = selectedID[0] == f32(meshData.meshId);
 
-    let hoverColor = output.albedo + vec4(0.2, 0.2, 0.3, 0.0);
-    let selectColor = vec4(0.9, .9, 0.9, output.albedo.w);
+    let hoverColor = vec4f(.3, 0., 0.1, 1.);
+    let selectColor = vec4(0.9, 0., 0.3, output.albedo.w);
 
-    output.albedo = mix(output.albedo, hoverColor, f32(isHovered) * 0.3);
-    output.albedo = mix(output.albedo, selectColor, f32(isSelected) * 0.5);
+    output.albedo = mix(output.albedo, hoverColor, f32(isHovered) * 0.1);
+    output.albedo = select(
+        output.albedo,
+        selectColor,
+        isSelected,
+    );
 
     return output;
 }

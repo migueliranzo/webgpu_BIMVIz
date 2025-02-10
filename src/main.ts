@@ -147,7 +147,6 @@ async function setupHtmlViewsAndMergeGeneralProperties(
   const itemspropertyarrayhandle = createItemspropertyarrayhandle(itemPropertiesMap);
   const viewModelHandler = setUpRightPanelItemProperties(typesList);
   actionHandler.onSelectedIdChange((newSelectedId: number) => {
-    console.log(newSelectedId)
     viewModelHandler.updateRightSidePropsSync(itemspropertyarrayhandle.getItemProperties(newSelectedId));
   });
 
