@@ -174,6 +174,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
       let energyConversionTypesLineObject = ifcAPI.GetLine(modelID, energyConversionTypesLineId);
       let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, energyConversionTypesLineObject.expressID);
       let itemPropertiesSet = pipeObjectPropertySets.find((propertySet) => propertySet.Name.value == 'PSet_Revit_Mechanical');
+      if (!itemPropertiesSet) break;
       itemPropertiesSet.HasProperties.forEach((x) => {
         let revitVal = ifcAPI.GetLine(modelID, x.value);
         if (revitVal.Name.value == 'System Type') {
@@ -209,6 +210,7 @@ const parseIfcFile = async function(FILE: Uint8Array) {
           let pipeObject = ifcAPI.GetLine(modelID, object.value);
           let pipeObjectPropertySets = await ifcAPI.properties.getPropertySets(modelID, object.value);
           let itemPropertiesSet = pipeObjectPropertySets.find((propertySet) => propertySet.Name.value == 'PSet_Revit_Mechanical');
+          if (!itemPropertiesSet) break;
           itemPropertiesSet.HasProperties.forEach((x) => {
             let revitVal = ifcAPI.GetLine(modelID, x.value);
             if (revitVal.Name.value == 'System Type') {

@@ -39,7 +39,7 @@
     -   Key Learnings
     -   Models Showcase
         
- [🚀 Live Site ](https://webgpu-bim-viz.vercel.app/)       
+[🚀 Live Site ](https://webgpu-bim-viz.vercel.app/)       
 ![Image](https://github.com/user-attachments/assets/1988214c-9d6f-4270-a7f6-2046235ba776)
 ----------
 
@@ -173,3 +173,8 @@ It has also been a humbling experience, some systems where I put a lot of effort
 
 ### Models Showcase
 ![Image](https://github.com/user-attachments/assets/97ea7699-aca2-4538-a28c-643cceff44b3)
+![Image](https://github.com/user-attachments/assets/ffd19230-a0eb-4b7b-a03a-55d96cc70afc)
+![Image](https://github.com/user-attachments/assets/889a4989-cf7a-47e9-bb85-bc4643f46704)
+![Image](https://github.com/user-attachments/assets/b6fb1c40-2b23-4481-8ca7-651cddf611cc)
+![Image](https://github.com/user-attachments/assets/166e1c0b-943e-445b-8a80-2260b5ce2ebb)
+![Image](https://github.com/user-attachments/assets/c9159737-a034-4c4c-8ab5-3786c84d821a)
