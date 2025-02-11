@@ -39,7 +39,7 @@
     -   Key Learnings
         
         
-![Image](https://github.com/user-attachments/assets/1f79ae09-c8f0-4e25-8629-375abab39dac)
+![Image](https://github.com/user-attachments/assets/1988214c-9d6f-4270-a7f6-2046235ba776)
 ----------
 
 ## 1. Project Overview
