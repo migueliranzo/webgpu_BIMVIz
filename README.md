@@ -37,6 +37,7 @@
 7.  **Development Insights**
     
     -   Key Learnings
+    -   Models Showcase
         
  [🚀 Live Site ](https://webgpu-bim-viz.vercel.app/)       
 ![Image](https://github.com/user-attachments/assets/1988214c-9d6f-4270-a7f6-2046235ba776)
@@ -169,3 +170,6 @@ It has been truly interesting learning how different a GPU application can be ar
  Thanks to this project, I now view rendering and graphics programming from a completely different perspective that better captures its inner workings, and I feel better equipped to tackle new challenges that I could have only dreamt of starting.
 
 It has also been a humbling experience, some systems where I put a lot of effort and interest had to be discarded for the completion of the project, and it has also made even more apparent the deep complexity of graphics programming, but I still took a lot from those experiences, and they really pushed me to get creative with debugging and got me even more familiar with the profiler, I definitely underestimated at earlier project stages how crucial debugging visualizations or tooling are in the realm of graphics, and I have gotten much better and understanding of how to leverage different techniques to understand what's really happening.
+
+### Models Showcase
+![Image](https://github.com/user-attachments/assets/97ea7699-aca2-4538-a28c-643cceff44b3)
