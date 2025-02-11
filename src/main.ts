@@ -13,6 +13,11 @@ document.getElementById('inputFileSelector')!.addEventListener(('change'), (e) =
   }
 })
 
+addEventListener("resize", () => {
+  const canvas = document.getElementById('canvas_main_render_target') as HTMLCanvasElement;
+  canvas.width = document.body.clientWidth;
+  canvas.height = document.body.clientHeight;
+});
 
 const actionHandler = createActionsHandler();
 
@@ -68,7 +73,7 @@ async function processModels(filesToParse: Uint8Array[]) {
   const meshLookUpIdOffsets = [0];
 
   for (const fileBuffer of filesToParse) {
-    const fileHandler = createFileHandler(fileBuffer)().parseIfcFileWithWorker;
+    const fileHandler = createFileHandler(fileBuffer)().getParsingResultPromises;
     modelInstancesPromises.push(fileHandler().geoPromise);
     modelItemsPropertiesPromises.push(fileHandler().itemPropertiesPromise);
     modelPropertiesPromises.push(fileHandler().generalPropertiesPromise);

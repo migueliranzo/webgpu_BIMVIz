@@ -397,11 +397,10 @@ background-color: white;
 
 
     #progressTextContainer{
-    font-size: 1.2rem;
-    line-height: 1.5;
-    padding: 0px;
-    margin: 16px 0px 0px;
-  color: white ;
+      position: fixed;
+  pointer-events: none;
+right: calc(50dvw - 100px);
+    width: fit-content;
     }
 
 

@@ -20,7 +20,6 @@ export function createFileHandler(FILE) {
     generalPropertiesResolve = resolve;
   })
 
-  const progressBackdrop = document.getElementById('progressBackdrop');
   const progressTextContainer = document.getElementById('progressTextContainer');
 
   myWorker.onmessage = (x) => {
@@ -41,13 +40,11 @@ export function createFileHandler(FILE) {
         break;
       }
       case 'itemPropertiesProgress': {
-        progressTextContainer.innerText = `Loading objects props... ${x.data.progress.toFixed(0)}%`;
-        updateProgressPanel(x.data.progress);
+        progressTextContainer.innerText = x.data.progress.toFixed(0) < 100 ? `Loading objects props... ${x.data.progress.toFixed(0)}%` : '';
         break;
       }
       case 'generalPropertiesProgress': {
-        progressTextContainer.innerText = `Loading model props... ${x.data.progress.toFixed(0)}%`;
-        updateProgressPanel(x.data.progress);
+        progressTextContainer.innerText = x.data.progress.toFixed(0) < 100 ? `Loading model props... ${x.data.progress.toFixed(0)}%` : '';
         break;
       }
 
@@ -62,19 +59,9 @@ export function createFileHandler(FILE) {
     }
   }
 
-  function updateProgressPanel(progress) {
-    if (progress > 99) {
-      progressBackdrop.style.inset = 'unset';
-      progressBackdrop.style.display = 'none';
-    } else {
-      progressBackdrop.style.inset = '0px';
-      progressBackdrop.style.display = 'flex';
-    }
-  }
-
   return (() => {
     return {
-      parseIfcFileWithWorker: () => ({
+      getParsingResultPromises: () => ({
         geoPromise,
         itemPropertiesPromise,
         generalPropertiesPromise
